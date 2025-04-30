@@ -3,15 +3,18 @@
   import { mdiImageBrokenVariant } from '@mdi/js';
   import { t } from 'svelte-i18n';
 
-  let className = '';
-  export { className as class };
-  export let hideMessage = false;
-  export let width: string | undefined = undefined;
-  export let height: string | undefined = undefined;
+  interface Props {
+    class?: string;
+    hideMessage?: boolean;
+    width?: string | undefined;
+    height?: string | undefined;
+  }
+
+  let { class: className = '', hideMessage = false, width = undefined, height = undefined }: Props = $props();
 </script>
 
 <div
-  class="flex flex-col overflow-hidden max-h-full max-w-full justify-center items-center bg-gray-100 dark:bg-gray-700 dark:text-gray-100 p-4 {className}"
+  class="flex flex-col overflow-hidden max-h-full max-w-full justify-center items-center bg-gray-100/40 dark:bg-gray-700/40 dark:text-gray-100 p-4 {className}"
   style:width
   style:height
 >

@@ -1,6 +1,6 @@
 <script lang="ts">
   import { shortcut } from '$lib/actions/shortcut';
-  import type { OnAction } from '$lib/components/asset-viewer/actions/action';
+  import type { OnAction, PreAction } from '$lib/components/asset-viewer/actions/action';
   import MenuOption from '$lib/components/shared-components/context-menu/menu-option.svelte';
   import { AssetAction } from '$lib/constants';
   import { toggleArchive } from '$lib/utils/asset-utils';
@@ -8,10 +8,18 @@
   import { mdiArchiveArrowDownOutline, mdiArchiveArrowUpOutline } from '@mdi/js';
   import { t } from 'svelte-i18n';
 
-  export let asset: AssetResponseDto;
-  export let onAction: OnAction;
+  interface Props {
+    asset: AssetResponseDto;
+    onAction: OnAction;
+    preAction: PreAction;
+  }
+
+  let { asset, onAction, preAction }: Props = $props();
 
   const onArchive = async () => {
+    if (!asset.isArchived) {
+      preAction({ type: AssetAction.ARCHIVE, asset });
+    }
     const updatedAsset = await toggleArchive(asset);
     if (updatedAsset) {
       onAction({ type: asset.isArchived ? AssetAction.ARCHIVE : AssetAction.UNARCHIVE, asset });

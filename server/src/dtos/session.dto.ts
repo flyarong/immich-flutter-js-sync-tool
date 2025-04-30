@@ -1,4 +1,4 @@
-import { SessionEntity } from 'src/entities/session.entity';
+import { Session } from 'src/database';
 
 export class SessionResponseDto {
   id!: string;
@@ -9,7 +9,7 @@ export class SessionResponseDto {
   deviceOS!: string;
 }
 
-export const mapSession = (entity: SessionEntity, currentId?: string): SessionResponseDto => ({
+export const mapSession = (entity: Session, currentId?: string): SessionResponseDto => ({
   id: entity.id,
   createdAt: entity.createdAt.toISOString(),
   updatedAt: entity.updatedAt.toISOString(),

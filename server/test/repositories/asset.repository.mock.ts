@@ -1,15 +1,17 @@
-import { IAssetRepository } from 'src/interfaces/asset.interface';
+import { AssetRepository } from 'src/repositories/asset.repository';
+import { RepositoryInterface } from 'src/types';
 import { Mocked, vitest } from 'vitest';
 
-export const newAssetRepositoryMock = (): Mocked<IAssetRepository> => {
+export const newAssetRepositoryMock = (): Mocked<RepositoryInterface<AssetRepository>> => {
   return {
     create: vitest.fn(),
+    createAll: vitest.fn(),
     upsertExif: vitest.fn(),
+    updateAllExif: vitest.fn(),
     upsertJobStatus: vitest.fn(),
     getByDayOfYear: vitest.fn(),
     getByIds: vitest.fn().mockResolvedValue([]),
-    getByIdsWithAllRelations: vitest.fn().mockResolvedValue([]),
-    getByAlbumId: vitest.fn(),
+    getByIdsWithAllRelationsButStacks: vitest.fn().mockResolvedValue([]),
     getByDeviceIds: vitest.fn(),
     getByUserId: vitest.fn(),
     getById: vitest.fn(),
@@ -17,12 +19,11 @@ export const newAssetRepositoryMock = (): Mocked<IAssetRepository> => {
     getByChecksum: vitest.fn(),
     getByChecksums: vitest.fn(),
     getUploadAssetIdByChecksum: vitest.fn(),
-    getWith: vitest.fn(),
     getRandom: vitest.fn(),
-    getLastUpdatedAssetForAlbumId: vitest.fn(),
     getAll: vitest.fn().mockResolvedValue({ items: [], hasNextPage: false }),
     getAllByDeviceId: vitest.fn(),
     getLivePhotoCount: vitest.fn(),
+    getLibraryAssetCount: vitest.fn(),
     updateAll: vitest.fn(),
     updateDuplicates: vitest.fn(),
     getByLibraryIdAndOriginalPath: vitest.fn(),
@@ -34,11 +35,14 @@ export const newAssetRepositoryMock = (): Mocked<IAssetRepository> => {
     getTimeBucket: vitest.fn(),
     getTimeBuckets: vitest.fn(),
     getAssetIdByCity: vitest.fn(),
-    getAssetIdByTag: vitest.fn(),
     getAllForUserFullSync: vitest.fn(),
     getChangedDeltaSync: vitest.fn(),
     getDuplicates: vitest.fn(),
     upsertFile: vitest.fn(),
     upsertFiles: vitest.fn(),
+    deleteFiles: vitest.fn(),
+    detectOfflineExternalAssets: vitest.fn(),
+    filterNewExternalAssetPaths: vitest.fn(),
+    updateByLibraryId: vitest.fn(),
   };
 };

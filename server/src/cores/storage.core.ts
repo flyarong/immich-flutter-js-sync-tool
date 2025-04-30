@@ -1,22 +1,18 @@
 import { randomUUID } from 'node:crypto';
 import { dirname, join, resolve } from 'node:path';
 import { APP_MEDIA_LOCATION } from 'src/constants';
-import { AssetEntity } from 'src/entities/asset.entity';
-import { PersonEntity } from 'src/entities/person.entity';
+import { StorageAsset } from 'src/database';
 import { AssetFileType, AssetPathType, ImageFormat, PathType, PersonPathType, StorageFolder } from 'src/enum';
-import { IAssetRepository } from 'src/interfaces/asset.interface';
-import { IConfigRepository } from 'src/interfaces/config.interface';
-import { ICryptoRepository } from 'src/interfaces/crypto.interface';
-import { ILoggerRepository } from 'src/interfaces/logger.interface';
-import { IMoveRepository } from 'src/interfaces/move.interface';
-import { IPersonRepository } from 'src/interfaces/person.interface';
-import { IStorageRepository } from 'src/interfaces/storage.interface';
-import { ISystemMetadataRepository } from 'src/interfaces/system-metadata.interface';
-import { getAssetFiles } from 'src/utils/asset.util';
+import { AssetRepository } from 'src/repositories/asset.repository';
+import { ConfigRepository } from 'src/repositories/config.repository';
+import { CryptoRepository } from 'src/repositories/crypto.repository';
+import { LoggingRepository } from 'src/repositories/logging.repository';
+import { MoveRepository } from 'src/repositories/move.repository';
+import { PersonRepository } from 'src/repositories/person.repository';
+import { StorageRepository } from 'src/repositories/storage.repository';
+import { SystemMetadataRepository } from 'src/repositories/system-metadata.repository';
+import { getAssetFile } from 'src/utils/asset.util';
 import { getConfig } from 'src/utils/config';
-
-export const THUMBNAIL_DIR = resolve(join(APP_MEDIA_LOCATION, StorageFolder.THUMBNAILS));
-export const ENCODED_VIDEO_DIR = resolve(join(APP_MEDIA_LOCATION, StorageFolder.ENCODED_VIDEO));
 
 export interface MoveRequest {
   entityId: string;
@@ -29,32 +25,34 @@ export interface MoveRequest {
   };
 }
 
-export type GeneratedImageType = AssetPathType.PREVIEW | AssetPathType.THUMBNAIL;
+export type GeneratedImageType = AssetPathType.PREVIEW | AssetPathType.THUMBNAIL | AssetPathType.FULLSIZE;
 export type GeneratedAssetType = GeneratedImageType | AssetPathType.ENCODED_VIDEO;
+
+export type ThumbnailPathEntity = { id: string; ownerId: string };
 
 let instance: StorageCore | null;
 
 export class StorageCore {
   private constructor(
-    private assetRepository: IAssetRepository,
-    private configRepository: IConfigRepository,
-    private cryptoRepository: ICryptoRepository,
-    private moveRepository: IMoveRepository,
-    private personRepository: IPersonRepository,
-    private storageRepository: IStorageRepository,
-    private systemMetadataRepository: ISystemMetadataRepository,
-    private logger: ILoggerRepository,
+    private assetRepository: AssetRepository,
+    private configRepository: ConfigRepository,
+    private cryptoRepository: CryptoRepository,
+    private moveRepository: MoveRepository,
+    private personRepository: PersonRepository,
+    private storageRepository: StorageRepository,
+    private systemMetadataRepository: SystemMetadataRepository,
+    private logger: LoggingRepository,
   ) {}
 
   static create(
-    assetRepository: IAssetRepository,
-    configRepository: IConfigRepository,
-    cryptoRepository: ICryptoRepository,
-    moveRepository: IMoveRepository,
-    personRepository: IPersonRepository,
-    storageRepository: IStorageRepository,
-    systemMetadataRepository: ISystemMetadataRepository,
-    logger: ILoggerRepository,
+    assetRepository: AssetRepository,
+    configRepository: ConfigRepository,
+    cryptoRepository: CryptoRepository,
+    moveRepository: MoveRepository,
+    personRepository: PersonRepository,
+    storageRepository: StorageRepository,
+    systemMetadataRepository: SystemMetadataRepository,
+    logger: LoggingRepository,
   ) {
     if (!instance) {
       instance = new StorageCore(
@@ -88,19 +86,19 @@ export class StorageCore {
     return join(APP_MEDIA_LOCATION, folder);
   }
 
-  static getPersonThumbnailPath(person: PersonEntity) {
+  static getPersonThumbnailPath(person: ThumbnailPathEntity) {
     return StorageCore.getNestedPath(StorageFolder.THUMBNAILS, person.ownerId, `${person.id}.jpeg`);
   }
 
-  static getImagePath(asset: AssetEntity, type: GeneratedImageType, format: ImageFormat) {
+  static getImagePath(asset: ThumbnailPathEntity, type: GeneratedImageType, format: 'jpeg' | 'webp') {
     return StorageCore.getNestedPath(StorageFolder.THUMBNAILS, asset.ownerId, `${asset.id}-${type}.${format}`);
   }
 
-  static getEncodedVideoPath(asset: AssetEntity) {
+  static getEncodedVideoPath(asset: ThumbnailPathEntity) {
     return StorageCore.getNestedPath(StorageFolder.ENCODED_VIDEO, asset.ownerId, `${asset.id}.mp4`);
   }
 
-  static getAndroidMotionPath(asset: AssetEntity, uuid: string) {
+  static getAndroidMotionPath(asset: ThumbnailPathEntity, uuid: string) {
     return StorageCore.getNestedPath(StorageFolder.ENCODED_VIDEO, asset.ownerId, `${uuid}-MP.mp4`);
   }
 
@@ -118,14 +116,9 @@ export class StorageCore {
     return normalizedPath.startsWith(normalizedAppMediaLocation);
   }
 
-  static isGeneratedAsset(path: string) {
-    return path.startsWith(THUMBNAIL_DIR) || path.startsWith(ENCODED_VIDEO_DIR);
-  }
-
-  async moveAssetImage(asset: AssetEntity, pathType: GeneratedImageType, format: ImageFormat) {
+  async moveAssetImage(asset: StorageAsset, pathType: GeneratedImageType, format: ImageFormat) {
     const { id: entityId, files } = asset;
-    const { thumbnailFile, previewFile } = getAssetFiles(files);
-    const oldFile = pathType === AssetPathType.PREVIEW ? previewFile : thumbnailFile;
+    const oldFile = getAssetFile(files, pathType);
     return this.moveFile({
       entityId,
       pathType,
@@ -134,7 +127,7 @@ export class StorageCore {
     });
   }
 
-  async moveAssetVideo(asset: AssetEntity) {
+  async moveAssetVideo(asset: StorageAsset) {
     return this.moveFile({
       entityId: asset.id,
       pathType: AssetPathType.ENCODED_VIDEO,
@@ -143,7 +136,7 @@ export class StorageCore {
     });
   }
 
-  async movePersonFile(person: PersonEntity, pathType: PersonPathType) {
+  async movePersonFile(person: { id: string; ownerId: string; thumbnailPath: string }, pathType: PersonPathType) {
     const { id: entityId, thumbnailPath } = person;
     switch (pathType) {
       case PersonPathType.FACE: {
@@ -190,7 +183,7 @@ export class StorageCore {
         return;
       }
 
-      move = await this.moveRepository.update({ id: move.id, oldPath: actualPath, newPath });
+      move = await this.moveRepository.update(move.id, { id: move.id, oldPath: actualPath, newPath });
     } else {
       move = await this.moveRepository.create({ entityId, pathType, oldPath, newPath });
     }
@@ -232,7 +225,7 @@ export class StorageCore {
     }
 
     await this.savePath(pathType, entityId, newPath);
-    await this.moveRepository.delete(move);
+    await this.moveRepository.delete(move.id);
   }
 
   private async verifyNewPathContentsMatchesExpected(
@@ -283,6 +276,9 @@ export class StorageCore {
     switch (pathType) {
       case AssetPathType.ORIGINAL: {
         return this.assetRepository.update({ id, originalPath: newPath });
+      }
+      case AssetPathType.FULLSIZE: {
+        return this.assetRepository.upsertFile({ assetId: id, type: AssetFileType.FULLSIZE, path: newPath });
       }
       case AssetPathType.PREVIEW: {
         return this.assetRepository.upsertFile({ assetId: id, type: AssetFileType.PREVIEW, path: newPath });

@@ -7,18 +7,23 @@
   import CircleIconButton from '$lib/components/elements/buttons/circle-icon-button.svelte';
   import { t } from 'svelte-i18n';
 
-  export let data: PageData;
-  export let isShowKeyboardShortcut = false;
+  interface Props {
+    data: PageData;
+  }
+
+  let { data }: Props = $props();
+
+  let isShowKeyboardShortcut = $state(false);
 </script>
 
 <UserPageLayout title={data.meta.title}>
-  <svelte:fragment slot="buttons">
+  {#snippet buttons()}
     <CircleIconButton
       icon={mdiKeyboard}
       title={$t('show_keyboard_shortcuts')}
-      on:click={() => (isShowKeyboardShortcut = !isShowKeyboardShortcut)}
+      onclick={() => (isShowKeyboardShortcut = !isShowKeyboardShortcut)}
     />
-  </svelte:fragment>
+  {/snippet}
   <section class="mx-4 flex place-content-center">
     <div class="w-full max-w-3xl">
       <UserSettingsList keys={data.keys} sessions={data.sessions} />

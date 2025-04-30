@@ -1,5 +1,5 @@
 import { SystemConfig } from 'src/config';
-import { DeepPartial } from 'typeorm';
+import { DeepPartial } from 'src/types';
 
 export const systemConfigStub = {
   enabled: {
@@ -47,13 +47,11 @@ export const systemConfigStub = {
       defaultStorageQuota: 1,
     },
   },
-  deleteDelay30: {
-    user: {
-      deleteDelay: 30,
-    },
-  },
   libraryWatchEnabled: {
     library: {
+      scan: {
+        enabled: false,
+      },
       watch: {
         enabled: true,
       },
@@ -61,6 +59,9 @@ export const systemConfigStub = {
   },
   libraryWatchDisabled: {
     library: {
+      scan: {
+        enabled: false,
+      },
       watch: {
         enabled: false,
       },
@@ -72,11 +73,48 @@ export const systemConfigStub = {
         enabled: true,
         cronExpression: '0 0 * * *',
       },
+      watch: {
+        enabled: false,
+      },
+    },
+  },
+  libraryScanAndWatch: {
+    library: {
+      scan: {
+        enabled: true,
+        cronExpression: '0 0 * * *',
+      },
+      watch: {
+        enabled: true,
+      },
+    },
+  },
+  backupEnabled: {
+    backup: {
+      database: {
+        enabled: true,
+        cronExpression: '0 0 * * *',
+        keepLastAmount: 1,
+      },
     },
   },
   machineLearningDisabled: {
     machineLearning: {
       enabled: false,
+    },
+  },
+  machineLearningEnabled: {
+    machineLearning: {
+      enabled: true,
+      clip: {
+        modelName: 'ViT-B-16__openai',
+        enabled: true,
+      },
+    },
+  },
+  publicUsersDisabled: {
+    server: {
+      publicUsers: false,
     },
   },
 } satisfies Record<string, DeepPartial<SystemConfig>>;

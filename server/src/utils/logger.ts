@@ -1,8 +1,7 @@
 import { HttpException } from '@nestjs/common';
-import { ILoggerRepository } from 'src/interfaces/logger.interface';
-import { TypeORMError } from 'typeorm';
+import { LoggingRepository } from 'src/repositories/logging.repository';
 
-export const logGlobalError = (logger: ILoggerRepository, error: Error) => {
+export const logGlobalError = (logger: LoggingRepository, error: Error) => {
   if (error instanceof HttpException) {
     const status = error.getStatus();
     const response = error.getResponse();
@@ -10,13 +9,8 @@ export const logGlobalError = (logger: ILoggerRepository, error: Error) => {
     return;
   }
 
-  if (error instanceof TypeORMError) {
-    logger.error(`Database error: ${error}`);
-    return;
-  }
-
   if (error instanceof Error) {
-    logger.error(`Unknown error: ${error}`);
+    logger.error(`Unknown error: ${error}`, error?.stack);
     return;
   }
 };

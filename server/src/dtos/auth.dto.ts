@@ -1,45 +1,21 @@
 import { ApiProperty } from '@nestjs/swagger';
 import { Transform } from 'class-transformer';
 import { IsEmail, IsNotEmpty, IsString, MinLength } from 'class-validator';
-import { APIKeyEntity } from 'src/entities/api-key.entity';
-import { SessionEntity } from 'src/entities/session.entity';
-import { SharedLinkEntity } from 'src/entities/shared-link.entity';
-import { UserEntity } from 'src/entities/user.entity';
-import { toEmail } from 'src/validation';
-
-export enum ImmichCookie {
-  ACCESS_TOKEN = 'immich_access_token',
-  AUTH_TYPE = 'immich_auth_type',
-  IS_AUTHENTICATED = 'immich_is_authenticated',
-  SHARED_LINK_TOKEN = 'immich_shared_link_token',
-}
-
-export enum ImmichHeader {
-  API_KEY = 'x-api-key',
-  USER_TOKEN = 'x-immich-user-token',
-  SESSION_TOKEN = 'x-immich-session-token',
-  SHARED_LINK_KEY = 'x-immich-share-key',
-  CHECKSUM = 'x-immich-checksum',
-  CID = 'x-immich-cid',
-}
-
-export enum ImmichQuery {
-  SHARED_LINK_KEY = 'key',
-  API_KEY = 'apiKey',
-  SESSION_KEY = 'sessionKey',
-}
+import { AuthApiKey, AuthSession, AuthSharedLink, AuthUser, UserAdmin } from 'src/database';
+import { ImmichCookie } from 'src/enum';
+import { Optional, toEmail } from 'src/validation';
 
 export type CookieResponse = {
   isSecure: boolean;
-  values: Array<{ key: ImmichCookie; value: string }>;
+  values: Array<{ key: ImmichCookie; value: string | null }>;
 };
 
 export class AuthDto {
-  user!: UserEntity;
+  user!: AuthUser;
 
-  apiKey?: APIKeyEntity;
-  sharedLink?: SharedLinkEntity;
-  session?: SessionEntity;
+  apiKey?: AuthApiKey;
+  sharedLink?: AuthSharedLink;
+  session?: AuthSession;
 }
 
 export class LoginCredentialDto {
@@ -65,7 +41,7 @@ export class LoginResponseDto {
   shouldChangePassword!: boolean;
 }
 
-export function mapLoginResponse(entity: UserEntity, accessToken: string): LoginResponseDto {
+export function mapLoginResponse(entity: UserAdmin, accessToken: string): LoginResponseDto {
   return {
     accessToken,
     userId: entity.id,
@@ -111,12 +87,28 @@ export class OAuthCallbackDto {
   @IsString()
   @ApiProperty()
   url!: string;
+
+  @Optional()
+  @IsString()
+  state?: string;
+
+  @Optional()
+  @IsString()
+  codeVerifier?: string;
 }
 
 export class OAuthConfigDto {
   @IsNotEmpty()
   @IsString()
   redirectUri!: string;
+
+  @Optional()
+  @IsString()
+  state?: string;
+
+  @Optional()
+  @IsString()
+  codeChallenge?: string;
 }
 
 export class OAuthAuthorizeResponseDto {

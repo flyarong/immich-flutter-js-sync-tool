@@ -1,11 +1,13 @@
 import { NotificationType, notificationController } from '$lib/components/shared-components/notification/notification';
 import { defaultLang, langs, locales } from '$lib/constants';
+import { authManager } from '$lib/managers/auth-manager.svelte';
 import { lang } from '$lib/stores/preferences.store';
 import { handleError } from '$lib/utils/handle-error';
 import {
   AssetJobName,
   AssetMediaSize,
   JobName,
+  MemoryType,
   finishOAuth,
   getAssetOriginalPath,
   getAssetPlaybackPath,
@@ -16,13 +18,12 @@ import {
   linkOAuthAccount,
   startOAuth,
   unlinkOAuthAccount,
-  type AssetResponseDto,
+  type MemoryResponseDto,
   type PersonResponseDto,
   type SharedLinkResponseDto,
   type UserResponseDto,
 } from '@immich/sdk';
 import { mdiCogRefreshOutline, mdiDatabaseRefreshOutline, mdiHeadSyncOutline, mdiImageRefreshOutline } from '@mdi/js';
-import { sortBy } from 'lodash-es';
 import { init, register, t } from 'svelte-i18n';
 import { derived, get } from 'svelte/store';
 
@@ -146,25 +147,19 @@ export const getJobName = derived(t, ($t) => {
       [JobName.Migration]: $t('admin.migration_job'),
       [JobName.BackgroundTask]: $t('admin.background_task_job'),
       [JobName.Search]: $t('search'),
-      [JobName.Library]: $t('library'),
+      [JobName.Library]: $t('external_libraries'),
       [JobName.Notifications]: $t('notifications'),
+      [JobName.BackupDatabase]: $t('admin.backup_database'),
     };
 
     return names[jobName];
   };
 });
 
-let _key: string | undefined;
 let _sharedLink: SharedLinkResponseDto | undefined;
 
-export const setKey = (key?: string) => (_key = key);
-export const getKey = (): string | undefined => _key;
 export const setSharedLink = (sharedLink: SharedLinkResponseDto) => (_sharedLink = sharedLink);
 export const getSharedLink = (): SharedLinkResponseDto | undefined => _sharedLink;
-
-export const isSharedLink = () => {
-  return !!_key;
-};
 
 const createUrl = (path: string, parameters?: Record<string, unknown>) => {
   const searchParameters = new URLSearchParams();
@@ -181,28 +176,30 @@ const createUrl = (path: string, parameters?: Record<string, unknown>) => {
   return getBaseUrl() + url.pathname + url.search + url.hash;
 };
 
-export const getAssetOriginalUrl = (options: string | { id: string; checksum?: string }) => {
+type AssetUrlOptions = { id: string; cacheKey?: string | null };
+
+export const getAssetOriginalUrl = (options: string | AssetUrlOptions) => {
   if (typeof options === 'string') {
     options = { id: options };
   }
-  const { id, checksum } = options;
-  return createUrl(getAssetOriginalPath(id), { key: getKey(), c: checksum });
+  const { id, cacheKey } = options;
+  return createUrl(getAssetOriginalPath(id), { key: authManager.key, c: cacheKey });
 };
 
-export const getAssetThumbnailUrl = (options: string | { id: string; size?: AssetMediaSize; checksum?: string }) => {
+export const getAssetThumbnailUrl = (options: string | (AssetUrlOptions & { size?: AssetMediaSize })) => {
   if (typeof options === 'string') {
     options = { id: options };
   }
-  const { id, size, checksum } = options;
-  return createUrl(getAssetThumbnailPath(id), { size, key: getKey(), c: checksum });
+  const { id, size, cacheKey } = options;
+  return createUrl(getAssetThumbnailPath(id), { size, key: authManager.key, c: cacheKey });
 };
 
-export const getAssetPlaybackUrl = (options: string | { id: string; checksum?: string }) => {
+export const getAssetPlaybackUrl = (options: string | AssetUrlOptions) => {
   if (typeof options === 'string') {
     options = { id: options };
   }
-  const { id, checksum } = options;
-  return createUrl(getAssetPlaybackPath(id), { key: getKey(), c: checksum });
+  const { id, cacheKey } = options;
+  return createUrl(getAssetPlaybackPath(id), { key: authManager.key, c: cacheKey });
 };
 
 export const getProfileImageUrl = (user: UserResponseDto) =>
@@ -260,7 +257,7 @@ export const copyToClipboard = async (secret: string) => {
 };
 
 export const makeSharedLinkUrl = (externalDomain: string, key: string) => {
-  return new URL(`share/${key}`, externalDomain || window.location.origin).href;
+  return new URL(`share/${key}`, externalDomain || globalThis.location.origin).href;
 };
 
 export const oauth = {
@@ -282,7 +279,7 @@ export const oauth = {
     try {
       const redirectUri = location.href.split('?')[0];
       const { url } = await startOAuth({ oAuthConfigDto: { redirectUri } });
-      window.location.href = url;
+      globalThis.location.href = url;
       return true;
     } catch (error) {
       handleError(error, $t('errors.unable_to_login_with_oauth'));
@@ -319,7 +316,14 @@ export const handlePromiseError = <T>(promise: Promise<T>): void => {
 };
 
 export const memoryLaneTitle = derived(t, ($t) => {
-  return (yearsAgo: number) => $t('years_ago', { values: { years: yearsAgo } });
+  return (memory: MemoryResponseDto) => {
+    const now = new Date();
+    if (memory.type === MemoryType.OnThisDay) {
+      return $t('years_ago', { values: { years: now.getFullYear() - memory.data.year } });
+    }
+
+    return $t('unknown');
+  };
 });
 
 export const withError = async <T>(fn: () => Promise<T>): Promise<[undefined, T] | [unknown, undefined]> => {
@@ -329,10 +333,6 @@ export const withError = async <T>(fn: () => Promise<T>): Promise<[undefined, T]
   } catch (error) {
     return [error, undefined];
   }
-};
-
-export const suggestDuplicateByFileSize = (assets: AssetResponseDto[]): AssetResponseDto | undefined => {
-  return sortBy(assets, (asset) => asset.exifInfo?.fileSizeInByte).pop();
 };
 
 // eslint-disable-next-line unicorn/prefer-code-point

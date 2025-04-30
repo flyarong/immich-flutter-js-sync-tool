@@ -15,25 +15,34 @@
     info?: string;
   }
 
-  export let onClose: () => void;
+  interface Props {
+    onClose: () => void;
+    shortcuts?: Shortcuts;
+  }
 
-  export let shortcuts: Shortcuts = {
-    general: [
-      { key: ['←', '→'], action: $t('previous_or_next_photo') },
-      { key: ['Esc'], action: $t('back_close_deselect') },
-      { key: ['Ctrl', 'k'], action: $t('search_your_photos') },
-      { key: ['Ctrl', '⇧', 'k'], action: $t('open_the_search_filters') },
-    ],
-    actions: [
-      { key: ['f'], action: $t('favorite_or_unfavorite_photo') },
-      { key: ['i'], action: $t('show_or_hide_info') },
-      { key: ['s'], action: $t('stack_selected_photos') },
-      { key: ['⇧', 'a'], action: $t('archive_or_unarchive_photo') },
-      { key: ['⇧', 'd'], action: $t('download') },
-      { key: ['Space'], action: $t('play_or_pause_video') },
-      { key: ['Del'], action: $t('trash_delete_asset'), info: $t('shift_to_permanent_delete') },
-    ],
-  };
+  let {
+    onClose,
+    shortcuts = {
+      general: [
+        { key: ['←', '→'], action: $t('previous_or_next_photo') },
+        { key: ['x'], action: $t('select') },
+        { key: ['Esc'], action: $t('back_close_deselect') },
+        { key: ['Ctrl', 'k'], action: $t('search_your_photos') },
+        { key: ['Ctrl', '⇧', 'k'], action: $t('open_the_search_filters') },
+      ],
+      actions: [
+        { key: ['f'], action: $t('favorite_or_unfavorite_photo') },
+        { key: ['i'], action: $t('show_or_hide_info') },
+        { key: ['s'], action: $t('stack_selected_photos') },
+        { key: ['l'], action: $t('add_to_album') },
+        { key: ['⇧', 'l'], action: $t('add_to_shared_album') },
+        { key: ['⇧', 'a'], action: $t('archive_or_unarchive_photo') },
+        { key: ['⇧', 'd'], action: $t('download') },
+        { key: ['Space'], action: $t('play_or_pause_video') },
+        { key: ['Del'], action: $t('trash_delete_asset'), info: $t('shift_to_permanent_delete') },
+      ],
+    },
+  }: Props = $props();
 </script>
 
 <FullScreenModal title={$t('keyboard_shortcuts')} width="auto" {onClose}>
@@ -42,11 +51,11 @@
       <div class="p-4">
         <h2>{$t('general')}</h2>
         <div class="text-sm">
-          {#each shortcuts.general as shortcut}
+          {#each shortcuts.general as shortcut (shortcut.key.join('-'))}
             <div class="grid grid-cols-[30%_70%] items-center gap-4 pt-4 text-sm">
               <div class="flex justify-self-end">
-                {#each shortcut.key as key}
-                  <p class="mr-1 flex items-center justify-center justify-self-end rounded-lg bg-immich-primary/25 p-2">
+                {#each shortcut.key as key (key)}
+                  <p class="me-1 flex items-center justify-center justify-self-end rounded-lg bg-immich-primary/25 p-2">
                     {key}
                   </p>
                 {/each}
@@ -61,11 +70,11 @@
       <div class="p-4">
         <h2>{$t('actions')}</h2>
         <div class="text-sm">
-          {#each shortcuts.actions as shortcut}
+          {#each shortcuts.actions as shortcut (shortcut.key.join('-'))}
             <div class="grid grid-cols-[30%_70%] items-center gap-4 pt-4 text-sm">
               <div class="flex justify-self-end">
-                {#each shortcut.key as key}
-                  <p class="mr-1 flex items-center justify-center justify-self-end rounded-lg bg-immich-primary/25 p-2">
+                {#each shortcut.key as key (key)}
+                  <p class="me-1 flex items-center justify-center justify-self-end rounded-lg bg-immich-primary/25 p-2">
                     {key}
                   </p>
                 {/each}

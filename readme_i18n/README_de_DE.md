@@ -28,10 +28,13 @@
   <a href="README_nl_NL.md">Nederlands</a>
   <a href="README_tr_TR.md">Türkçe</a>
   <a href="README_zh_CN.md">中文</a>
+  <a href="README_uk_UA.md">Українська</a>
   <a href="README_ru_RU.md">Русский</a>
   <a href="README_pt_BR.md">Português Brasileiro</a>
   <a href="README_sv_SE.md">Svenska</a>
   <a href="README_ar_JO.md">العربية</a>
+  <a href="README_vi_VN.md">Tiếng Việt</a>
+  <a href="README_th_TH.md">ภาษาไทย</a>
 </p>
 
 ## Warnung
@@ -58,10 +61,7 @@
 
 ## Demo
 
-Die Web-Demo kannst Du unter https://demo.immich.app finden.
-Die Demo läuft auf einer Free Tier Oracle VM in Amsterdam mit einer 2.4Ghz Quad-Core ARM64 CPU und 24GB RAM.
-
-Für die Handy-App kannst Du `https://demo.immich.app/api` als `Server Endpoint URL` angeben.
+Die Web-Demo kannst Du unter https://demo.immich.app finden. Für die Handy-App kannst Du `https://demo.immich.app` als `Server Endpoint URL` angeben.
 
 ### Login Daten
 
@@ -101,6 +101,8 @@ Für die Handy-App kannst Du `https://demo.immich.app/api` als `Server Endpoint 
 | Offline Unterstützung                                | Ja     | Nein  |
 | Schreibgeschützte Gallerie                           | Ja     | Ja    |
 | Gestapelte Bilder                                    | Ja     | Ja    |
+| Tags                                                 | Nein   | Ja    |
+| Ordner-Ansicht                                       | Nein   | Ja    |
 
 
 ## Übersetzungen

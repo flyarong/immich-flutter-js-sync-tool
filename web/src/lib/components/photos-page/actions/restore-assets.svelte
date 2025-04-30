@@ -1,5 +1,4 @@
 <script lang="ts">
-  import Icon from '$lib/components/elements/icon.svelte';
   import {
     NotificationType,
     notificationController,
@@ -8,15 +7,19 @@
   import { handleError } from '$lib/utils/handle-error';
   import { restoreAssets } from '@immich/sdk';
   import { mdiHistory } from '@mdi/js';
-  import Button from '../../elements/buttons/button.svelte';
   import { getAssetControlContext } from '../asset-select-control-bar.svelte';
   import { t } from 'svelte-i18n';
+  import { Button } from '@immich/ui';
 
-  export let onRestore: OnRestore | undefined;
+  interface Props {
+    onRestore: OnRestore | undefined;
+  }
+
+  let { onRestore }: Props = $props();
 
   const { getAssets, clearSelect } = getAssetControlContext();
 
-  let loading = false;
+  let loading = $state(false);
 
   const handleRestore = async () => {
     loading = true;
@@ -40,7 +43,13 @@
   };
 </script>
 
-<Button disabled={loading} size="sm" color="transparent-gray" shadow={false} rounded="lg" on:click={handleRestore}>
-  <Icon path={mdiHistory} size="24" />
-  <span class="ml-2">{$t('restore')}</span>
+<Button
+  leadingIcon={mdiHistory}
+  disabled={loading}
+  size="medium"
+  color="secondary"
+  variant="ghost"
+  onclick={handleRestore}
+>
+  {$t('restore')}
 </Button>

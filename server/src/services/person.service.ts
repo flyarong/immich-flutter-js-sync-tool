@@ -1,12 +1,20 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
-import { FACE_THUMBNAIL_SIZE } from 'src/constants';
+import { Insertable, Updateable } from 'kysely';
+import { FACE_THUMBNAIL_SIZE, JOBS_ASSET_PAGINATION_SIZE } from 'src/constants';
 import { StorageCore } from 'src/cores/storage.core';
+import { Person } from 'src/database';
+import { AssetFaces, FaceSearch } from 'src/db';
+import { Chunked, OnJob } from 'src/decorators';
 import { BulkIdErrorReason, BulkIdResponseDto } from 'src/dtos/asset-ids.response.dto';
 import { AuthDto } from 'src/dtos/auth.dto';
 import {
+  AssetFaceCreateDto,
+  AssetFaceDeleteDto,
   AssetFaceResponseDto,
   AssetFaceUpdateDto,
   FaceDto,
+  mapFaces,
+  mapPerson,
   MergePersonDto,
   PeopleResponseDto,
   PeopleUpdateDto,
@@ -15,58 +23,51 @@ import {
   PersonSearchDto,
   PersonStatisticsResponseDto,
   PersonUpdateDto,
-  mapFaces,
-  mapPerson,
 } from 'src/dtos/person.dto';
-import { AssetFaceEntity } from 'src/entities/asset-face.entity';
-import { AssetEntity } from 'src/entities/asset.entity';
-import { FaceSearchEntity } from 'src/entities/face-search.entity';
-import { PersonEntity } from 'src/entities/person.entity';
 import {
   AssetType,
   CacheControl,
   ImageFormat,
+  JobName,
+  JobStatus,
   Permission,
   PersonPathType,
+  QueueName,
   SourceType,
   SystemMetadataKey,
 } from 'src/enum';
-import { WithoutProperty } from 'src/interfaces/asset.interface';
-import {
-  IBaseJob,
-  IDeferrableJob,
-  IEntityJob,
-  INightlyJob,
-  JOBS_ASSET_PAGINATION_SIZE,
-  JobItem,
-  JobName,
-  JobStatus,
-  QueueName,
-} from 'src/interfaces/job.interface';
-import { BoundingBox } from 'src/interfaces/machine-learning.interface';
-import { CropOptions, ImageDimensions, InputDimensions } from 'src/interfaces/media.interface';
-import { UpdateFacesData } from 'src/interfaces/person.interface';
+import { WithoutProperty } from 'src/repositories/asset.repository';
+import { BoundingBox } from 'src/repositories/machine-learning.repository';
+import { UpdateFacesData } from 'src/repositories/person.repository';
 import { BaseService } from 'src/services/base.service';
-import { getAssetFiles } from 'src/utils/asset.util';
+import { CropOptions, ImageDimensions, InputDimensions, JobItem, JobOf } from 'src/types';
 import { ImmichFileResponse } from 'src/utils/file';
 import { mimeTypes } from 'src/utils/mime-types';
 import { isFaceImportEnabled, isFacialRecognitionEnabled } from 'src/utils/misc';
 import { usePagination } from 'src/utils/pagination';
-import { IsNull } from 'typeorm';
 
 @Injectable()
 export class PersonService extends BaseService {
   async getAll(auth: AuthDto, dto: PersonSearchDto): Promise<PeopleResponseDto> {
-    const { withHidden = false, page, size } = dto;
+    const { withHidden = false, closestAssetId, closestPersonId, page, size } = dto;
+    let closestFaceAssetId = closestAssetId;
     const pagination = {
       take: size,
       skip: (page - 1) * size,
     };
 
+    if (closestPersonId) {
+      const person = await this.personRepository.getById(closestPersonId);
+      if (!person?.faceAssetId) {
+        throw new NotFoundException('Person not found');
+      }
+      closestFaceAssetId = person.faceAssetId;
+    }
     const { machineLearning } = await this.getConfig({ withCache: false });
     const { items, hasNextPage } = await this.personRepository.getAllForUser(pagination, auth.user.id, {
       minimumFaceCount: machineLearning.facialRecognition.minFaces,
       withHidden,
+      closestFaceAssetId,
     });
     const { total, hidden } = await this.personRepository.getNumberOfPeople(auth.user.id);
 
@@ -98,7 +99,7 @@ export class PersonService extends BaseService {
         await this.personRepository.reassignFace(face.id, personId);
       }
 
-      result.push(person);
+      result.push(mapPerson(person));
     }
     if (changeFeaturePhoto.length > 0) {
       // Remove duplicates
@@ -139,7 +140,7 @@ export class PersonService extends BaseService {
     for (const personId of changeFeaturePhoto) {
       const assetFace = await this.personRepository.getRandomFace(personId);
 
-      if (assetFace !== null) {
+      if (assetFace) {
         await this.personRepository.update({ id: personId, faceAssetId: assetFace.id });
         jobs.push({ name: JobName.GENERATE_PERSON_THUMBNAIL, data: { id: personId } });
       }
@@ -172,19 +173,23 @@ export class PersonService extends BaseService {
     });
   }
 
-  create(auth: AuthDto, dto: PersonCreateDto): Promise<PersonResponseDto> {
-    return this.personRepository.create({
+  async create(auth: AuthDto, dto: PersonCreateDto): Promise<PersonResponseDto> {
+    const person = await this.personRepository.create({
       ownerId: auth.user.id,
       name: dto.name,
       birthDate: dto.birthDate,
       isHidden: dto.isHidden,
+      isFavorite: dto.isFavorite,
+      color: dto.color,
     });
+
+    return mapPerson(person);
   }
 
   async update(auth: AuthDto, id: string, dto: PersonUpdateDto): Promise<PersonResponseDto> {
     await this.requireAccess({ auth, permission: Permission.PERSON_UPDATE, ids: [id] });
 
-    const { name, birthDate, isHidden, featureFaceAssetId: assetId } = dto;
+    const { name, birthDate, isHidden, featureFaceAssetId: assetId, isFavorite, color } = dto;
     // TODO: set by faceId directly
     let faceId: string | undefined = undefined;
     if (assetId) {
@@ -197,7 +202,15 @@ export class PersonService extends BaseService {
       faceId = face.id;
     }
 
-    const person = await this.personRepository.update({ id, faceAssetId: faceId, name, birthDate, isHidden });
+    const person = await this.personRepository.update({
+      id,
+      faceAssetId: faceId,
+      name,
+      birthDate,
+      isHidden,
+      isFavorite,
+      color,
+    });
 
     if (assetId) {
       await this.jobRepository.queue({ name: JobName.GENERATE_PERSON_THUMBNAIL, data: { id } });
@@ -215,6 +228,7 @@ export class PersonService extends BaseService {
           name: person.name,
           birthDate: person.birthDate,
           featureFaceAssetId: person.featureFaceAssetId,
+          isFavorite: person.isFavorite,
         });
         results.push({ id: person.id, success: true });
       } catch (error: Error | any) {
@@ -225,19 +239,22 @@ export class PersonService extends BaseService {
     return results;
   }
 
-  private async delete(people: PersonEntity[]) {
+  @Chunked()
+  private async delete(people: { id: string; thumbnailPath: string }[]) {
     await Promise.all(people.map((person) => this.storageRepository.unlink(person.thumbnailPath)));
-    await this.personRepository.delete(people);
+    await this.personRepository.delete(people.map((person) => person.id));
     this.logger.debug(`Deleted ${people.length} people`);
   }
 
+  @OnJob({ name: JobName.PERSON_CLEANUP, queue: QueueName.BACKGROUND_TASK })
   async handlePersonCleanup(): Promise<JobStatus> {
     const people = await this.personRepository.getAllWithoutFaces();
     await this.delete(people);
     return JobStatus.SUCCESS;
   }
 
-  async handleQueueDetectFaces({ force }: IBaseJob): Promise<JobStatus> {
+  @OnJob({ name: JobName.QUEUE_FACE_DETECTION, queue: QueueName.FACE_DETECTION })
+  async handleQueueDetectFaces({ force }: JobOf<JobName.QUEUE_FACE_DETECTION>): Promise<JobStatus> {
     const { machineLearning } = await this.getConfig({ withCache: false });
     if (!isFacialRecognitionEnabled(machineLearning)) {
       return JobStatus.SKIPPED;
@@ -252,7 +269,7 @@ export class PersonService extends BaseService {
       return force === false
         ? this.assetRepository.getWithout(pagination, WithoutProperty.FACES)
         : this.assetRepository.getAll(pagination, {
-            orderDirection: 'DESC',
+            orderDirection: 'desc',
             withFaces: true,
             withArchived: true,
             isVisible: true,
@@ -272,22 +289,16 @@ export class PersonService extends BaseService {
     return JobStatus.SUCCESS;
   }
 
-  async handleDetectFaces({ id }: IEntityJob): Promise<JobStatus> {
+  @OnJob({ name: JobName.FACE_DETECTION, queue: QueueName.FACE_DETECTION })
+  async handleDetectFaces({ id }: JobOf<JobName.FACE_DETECTION>): Promise<JobStatus> {
     const { machineLearning } = await this.getConfig({ withCache: true });
     if (!isFacialRecognitionEnabled(machineLearning)) {
       return JobStatus.SKIPPED;
     }
 
-    const relations = {
-      exifInfo: true,
-      faces: {
-        person: false,
-      },
-      files: true,
-    };
-    const [asset] = await this.assetRepository.getByIds([id], relations);
-    const { previewFile } = getAssetFiles(asset.files);
-    if (!asset || !previewFile) {
+    const asset = await this.assetJobRepository.getForDetectFacesJob(id);
+    const previewFile = asset?.files[0];
+    if (!asset || asset.files.length !== 1 || !previewFile) {
       return JobStatus.FAILED;
     }
 
@@ -296,15 +307,16 @@ export class PersonService extends BaseService {
     }
 
     const { imageHeight, imageWidth, faces } = await this.machineLearningRepository.detectFaces(
-      machineLearning.url,
+      machineLearning.urls,
       previewFile.path,
       machineLearning.facialRecognition,
     );
     this.logger.debug(`${faces.length} faces detected in ${previewFile.path}`);
 
-    const facesToAdd: (Partial<AssetFaceEntity> & { id: string })[] = [];
-    const embeddings: FaceSearchEntity[] = [];
+    const facesToAdd: (Insertable<AssetFaces> & { id: string })[] = [];
+    const embeddings: FaceSearch[] = [];
     const mlFaceIds = new Set<string>();
+
     for (const face of asset.faces) {
       if (face.sourceType === SourceType.MACHINE_LEARNING) {
         mlFaceIds.add(face.id);
@@ -362,7 +374,10 @@ export class PersonService extends BaseService {
     return JobStatus.SUCCESS;
   }
 
-  private iou(face: AssetFaceEntity, newBox: BoundingBox): number {
+  private iou(
+    face: { boundingBoxX1: number; boundingBoxY1: number; boundingBoxX2: number; boundingBoxY2: number },
+    newBox: BoundingBox,
+  ): number {
     const x1 = Math.max(face.boundingBoxX1, newBox.x1);
     const y1 = Math.max(face.boundingBoxY1, newBox.y1);
     const x2 = Math.min(face.boundingBoxX2, newBox.x2);
@@ -376,7 +391,8 @@ export class PersonService extends BaseService {
     return intersection / union;
   }
 
-  async handleQueueRecognizeFaces({ force, nightly }: INightlyJob): Promise<JobStatus> {
+  @OnJob({ name: JobName.QUEUE_FACIAL_RECOGNITION, queue: QueueName.FACIAL_RECOGNITION })
+  async handleQueueRecognizeFaces({ force, nightly }: JobOf<JobName.QUEUE_FACIAL_RECOGNITION>): Promise<JobStatus> {
     const { machineLearning } = await this.getConfig({ withCache: false });
     if (!isFacialRecognitionEnabled(machineLearning)) {
       return JobStatus.SKIPPED;
@@ -409,34 +425,35 @@ export class PersonService extends BaseService {
     }
 
     const lastRun = new Date().toISOString();
-    const facePagination = usePagination(JOBS_ASSET_PAGINATION_SIZE, (pagination) =>
-      this.personRepository.getAllFaces(pagination, {
-        where: force ? undefined : { personId: IsNull(), sourceType: SourceType.MACHINE_LEARNING },
-      }),
+    const facePagination = this.personRepository.getAllFaces(
+      force ? undefined : { personId: null, sourceType: SourceType.MACHINE_LEARNING },
     );
 
-    for await (const page of facePagination) {
-      await this.jobRepository.queueAll(
-        page.map((face) => ({ name: JobName.FACIAL_RECOGNITION, data: { id: face.id, deferred: false } })),
-      );
+    let jobs: { name: JobName.FACIAL_RECOGNITION; data: { id: string; deferred: false } }[] = [];
+    for await (const face of facePagination) {
+      jobs.push({ name: JobName.FACIAL_RECOGNITION, data: { id: face.id, deferred: false } });
+
+      if (jobs.length === JOBS_ASSET_PAGINATION_SIZE) {
+        await this.jobRepository.queueAll(jobs);
+        jobs = [];
+      }
     }
+
+    await this.jobRepository.queueAll(jobs);
 
     await this.systemMetadataRepository.set(SystemMetadataKey.FACIAL_RECOGNITION_STATE, { lastRun });
 
     return JobStatus.SUCCESS;
   }
 
-  async handleRecognizeFaces({ id, deferred }: IDeferrableJob): Promise<JobStatus> {
+  @OnJob({ name: JobName.FACIAL_RECOGNITION, queue: QueueName.FACIAL_RECOGNITION })
+  async handleRecognizeFaces({ id, deferred }: JobOf<JobName.FACIAL_RECOGNITION>): Promise<JobStatus> {
     const { machineLearning } = await this.getConfig({ withCache: true });
     if (!isFacialRecognitionEnabled(machineLearning)) {
       return JobStatus.SKIPPED;
     }
 
-    const face = await this.personRepository.getFaceByIdWithAssets(
-      id,
-      { person: true, asset: true, faceSearch: true },
-      { id: true, personId: true, sourceType: true, faceSearch: { embedding: true } },
-    );
+    const face = await this.personRepository.getFaceForFacialRecognitionJob(id);
     if (!face || !face.asset) {
       this.logger.warn(`Face ${id} not found`);
       return JobStatus.FAILED;
@@ -462,6 +479,7 @@ export class PersonService extends BaseService {
       embedding: face.faceSearch.embedding,
       maxDistance: machineLearning.facialRecognition.maxDistance,
       numResults: machineLearning.facialRecognition.minFaces,
+      minBirthDate: face.asset.fileCreatedAt ?? undefined,
     });
 
     // `matches` also includes the face itself
@@ -479,7 +497,7 @@ export class PersonService extends BaseService {
       return JobStatus.SKIPPED;
     }
 
-    let personId = matches.find((match) => match.face.personId)?.face.personId;
+    let personId = matches.find((match) => match.personId)?.personId;
     if (!personId) {
       const matchWithPerson = await this.searchRepository.searchFaces({
         userIds: [face.asset.ownerId],
@@ -487,10 +505,11 @@ export class PersonService extends BaseService {
         maxDistance: machineLearning.facialRecognition.maxDistance,
         numResults: 1,
         hasPerson: true,
+        minBirthDate: face.asset.fileCreatedAt ?? undefined,
       });
 
       if (matchWithPerson.length > 0) {
-        personId = matchWithPerson[0].face.personId;
+        personId = matchWithPerson[0].personId;
       }
     }
 
@@ -509,7 +528,8 @@ export class PersonService extends BaseService {
     return JobStatus.SUCCESS;
   }
 
-  async handlePersonMigration({ id }: IEntityJob): Promise<JobStatus> {
+  @OnJob({ name: JobName.MIGRATE_PERSON, queue: QueueName.MIGRATION })
+  async handlePersonMigration({ id }: JobOf<JobName.MIGRATE_PERSON>): Promise<JobStatus> {
     const person = await this.personRepository.getById(id);
     if (!person) {
       return JobStatus.FAILED;
@@ -520,46 +540,24 @@ export class PersonService extends BaseService {
     return JobStatus.SUCCESS;
   }
 
-  async handleGeneratePersonThumbnail(data: IEntityJob): Promise<JobStatus> {
+  @OnJob({ name: JobName.GENERATE_PERSON_THUMBNAIL, queue: QueueName.THUMBNAIL_GENERATION })
+  async handleGeneratePersonThumbnail({ id }: JobOf<JobName.GENERATE_PERSON_THUMBNAIL>): Promise<JobStatus> {
     const { machineLearning, metadata, image } = await this.getConfig({ withCache: true });
     if (!isFacialRecognitionEnabled(machineLearning) && !isFaceImportEnabled(metadata)) {
       return JobStatus.SKIPPED;
     }
 
-    const person = await this.personRepository.getById(data.id);
-    if (!person?.faceAssetId) {
-      this.logger.error(`Could not generate person thumbnail: person ${person?.id} has no face asset`);
+    const data = await this.personRepository.getDataForThumbnailGenerationJob(id);
+    if (!data) {
+      this.logger.error(`Could not generate person thumbnail for ${id}: missing data`);
       return JobStatus.FAILED;
     }
 
-    const face = await this.personRepository.getFaceByIdWithAssets(person.faceAssetId);
-    if (face === null) {
-      this.logger.error(`Could not generate person thumbnail: face ${person.faceAssetId} not found`);
-      return JobStatus.FAILED;
-    }
+    const { ownerId, x1, y1, x2, y2, oldWidth, oldHeight } = data;
 
-    const {
-      assetId,
-      boundingBoxX1: x1,
-      boundingBoxX2: x2,
-      boundingBoxY1: y1,
-      boundingBoxY2: y2,
-      imageWidth: oldWidth,
-      imageHeight: oldHeight,
-    } = face;
+    const { width, height, inputPath } = await this.getInputDimensions(data);
 
-    const asset = await this.assetRepository.getById(assetId, {
-      exifInfo: true,
-      files: true,
-    });
-    if (!asset) {
-      this.logger.error(`Could not generate person thumbnail: asset ${assetId} does not exist`);
-      return JobStatus.FAILED;
-    }
-
-    const { width, height, inputPath } = await this.getInputDimensions(asset, { width: oldWidth, height: oldHeight });
-
-    const thumbnailPath = StorageCore.getPersonThumbnailPath(person);
+    const thumbnailPath = StorageCore.getPersonThumbnailPath({ id, ownerId });
     this.storageCore.ensureFolders(thumbnailPath);
 
     const thumbnailOptions = {
@@ -572,7 +570,7 @@ export class PersonService extends BaseService {
     };
 
     await this.mediaRepository.generateThumbnail(inputPath, thumbnailOptions, thumbnailPath);
-    await this.personRepository.update({ id: person.id, thumbnailPath });
+    await this.personRepository.update({ id, thumbnailPath });
 
     return JobStatus.SUCCESS;
   }
@@ -609,7 +607,7 @@ export class PersonService extends BaseService {
           continue;
         }
 
-        const update: Partial<PersonEntity> = {};
+        const update: Updateable<Person> & { id: string } = { id: primaryPerson.id };
         if (!primaryPerson.name && mergePerson.name) {
           update.name = mergePerson.name;
         }
@@ -619,7 +617,7 @@ export class PersonService extends BaseService {
         }
 
         if (Object.keys(update).length > 0) {
-          primaryPerson = await this.personRepository.update({ id: primaryPerson.id, ...update });
+          primaryPerson = await this.personRepository.update(update);
         }
 
         const mergeName = mergePerson.name || mergePerson.id;
@@ -647,27 +645,26 @@ export class PersonService extends BaseService {
     return person;
   }
 
-  private async getInputDimensions(asset: AssetEntity, oldDims: ImageDimensions): Promise<InputDimensions> {
-    if (!asset.exifInfo?.exifImageHeight || !asset.exifInfo.exifImageWidth) {
-      throw new Error(`Asset ${asset.id} dimensions are unknown`);
-    }
-
-    const { previewFile } = getAssetFiles(asset.files);
-    if (!previewFile) {
-      throw new Error(`Asset ${asset.id} has no preview path`);
-    }
-
+  private async getInputDimensions(asset: {
+    type: AssetType;
+    exifImageWidth: number;
+    exifImageHeight: number;
+    previewPath: string;
+    originalPath: string;
+    oldWidth: number;
+    oldHeight: number;
+  }): Promise<InputDimensions> {
     if (asset.type === AssetType.IMAGE) {
-      let { exifImageWidth: width, exifImageHeight: height } = asset.exifInfo;
-      if (oldDims.height > oldDims.width !== height > width) {
+      let { exifImageWidth: width, exifImageHeight: height } = asset;
+      if (asset.oldHeight > asset.oldWidth !== height > width) {
         [width, height] = [height, width];
       }
 
       return { width, height, inputPath: asset.originalPath };
     }
 
-    const { width, height } = await this.mediaRepository.getImageDimensions(previewFile.path);
-    return { width, height, inputPath: previewFile.path };
+    const { width, height } = await this.mediaRepository.getImageDimensions(asset.previewPath);
+    return { width, height, inputPath: asset.previewPath };
   }
 
   private getCrop(dims: { old: ImageDimensions; new: ImageDimensions }, { x1, y1, x2, y2 }: BoundingBox): CropOptions {
@@ -697,5 +694,31 @@ export class PersonService extends BaseService {
       width: newHalfSize * 2,
       height: newHalfSize * 2,
     };
+  }
+
+  // TODO return a asset face response
+  async createFace(auth: AuthDto, dto: AssetFaceCreateDto): Promise<void> {
+    await Promise.all([
+      this.requireAccess({ auth, permission: Permission.ASSET_READ, ids: [dto.assetId] }),
+      this.requireAccess({ auth, permission: Permission.PERSON_READ, ids: [dto.personId] }),
+    ]);
+
+    await this.personRepository.createAssetFace({
+      personId: dto.personId,
+      assetId: dto.assetId,
+      imageHeight: dto.imageHeight,
+      imageWidth: dto.imageWidth,
+      boundingBoxX1: dto.x,
+      boundingBoxX2: dto.x + dto.width,
+      boundingBoxY1: dto.y,
+      boundingBoxY2: dto.y + dto.height,
+      sourceType: SourceType.MANUAL,
+    });
+  }
+
+  async deleteFace(auth: AuthDto, id: string, dto: AssetFaceDeleteDto): Promise<void> {
+    await this.requireAccess({ auth, permission: Permission.FACE_DELETE, ids: [id] });
+
+    return dto.force ? this.personRepository.deleteAssetFace(id) : this.personRepository.softDeleteAssetFaces(id);
   }
 }

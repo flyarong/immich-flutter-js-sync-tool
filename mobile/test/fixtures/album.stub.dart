@@ -1,4 +1,5 @@
 import 'package:immich_mobile/entities/album.entity.dart';
+import 'package:immich_mobile/infrastructure/entities/user.entity.dart';
 
 import 'asset.stub.dart';
 import 'user.stub.dart';
@@ -26,7 +27,7 @@ final class AlbumStub {
     shared: true,
     activityEnabled: false,
     endDate: DateTime(2020),
-  )..sharedUsers.addAll([UserStub.admin]);
+  )..sharedUsers.addAll([User.fromDto(UserStub.admin)]);
 
   static final oneAsset = Album(
     name: "album-with-single-asset",
@@ -53,5 +54,50 @@ final class AlbumStub {
   )
     ..assets.addAll([AssetStub.image1, AssetStub.image2])
     ..activityEnabled = true
-    ..owner.value = UserStub.admin;
+    ..owner.value = User.fromDto(UserStub.admin);
+
+  static final create2020end2020Album = Album(
+    name: "create2020update2020Album",
+    localId: "create2020update2020Album-local",
+    remoteId: "create2020update2020Album-remote",
+    createdAt: DateTime(2020),
+    modifiedAt: DateTime(2020),
+    shared: false,
+    activityEnabled: false,
+    startDate: DateTime(2020),
+    endDate: DateTime(2020),
+  );
+  static final create2020end2022Album = Album(
+    name: "create2020update2021Album",
+    localId: "create2020update2021Album-local",
+    remoteId: "create2020update2021Album-remote",
+    createdAt: DateTime(2020),
+    modifiedAt: DateTime(2022),
+    shared: false,
+    activityEnabled: false,
+    startDate: DateTime(2020),
+    endDate: DateTime(2022),
+  );
+  static final create2020end2024Album = Album(
+    name: "create2020update2022Album",
+    localId: "create2020update2022Album-local",
+    remoteId: "create2020update2022Album-remote",
+    createdAt: DateTime(2020),
+    modifiedAt: DateTime(2024),
+    shared: false,
+    activityEnabled: false,
+    startDate: DateTime(2020),
+    endDate: DateTime(2024),
+  );
+  static final create2020end2026Album = Album(
+    name: "create2020update2023Album",
+    localId: "create2020update2023Album-local",
+    remoteId: "create2020update2023Album-remote",
+    createdAt: DateTime(2020),
+    modifiedAt: DateTime(2026),
+    shared: false,
+    activityEnabled: false,
+    startDate: DateTime(2020),
+    endDate: DateTime(2026),
+  );
 }

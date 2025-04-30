@@ -1,6 +1,6 @@
 <script lang="ts">
   import { goto } from '$app/navigation';
-  import type { OnAction } from '$lib/components/asset-viewer/actions/action';
+  import type { OnAction, PreAction } from '$lib/components/asset-viewer/actions/action';
   import AddToAlbumAction from '$lib/components/asset-viewer/actions/add-to-album-action.svelte';
   import ArchiveAction from '$lib/components/asset-viewer/actions/archive-action.svelte';
   import CloseAction from '$lib/components/asset-viewer/actions/close-action.svelte';
@@ -9,10 +9,12 @@
   import FavoriteAction from '$lib/components/asset-viewer/actions/favorite-action.svelte';
   import RestoreAction from '$lib/components/asset-viewer/actions/restore-action.svelte';
   import SetAlbumCoverAction from '$lib/components/asset-viewer/actions/set-album-cover-action.svelte';
+  import SetFeaturedPhotoAction from '$lib/components/asset-viewer/actions/set-person-featured-action.svelte';
   import SetProfilePictureAction from '$lib/components/asset-viewer/actions/set-profile-picture-action.svelte';
   import ShareAction from '$lib/components/asset-viewer/actions/share-action.svelte';
   import ShowDetailAction from '$lib/components/asset-viewer/actions/show-detail-action.svelte';
   import UnstackAction from '$lib/components/asset-viewer/actions/unstack-action.svelte';
+  import KeepThisDeleteOthersAction from '$lib/components/asset-viewer/actions/keep-this-delete-others.svelte';
   import CircleIconButton from '$lib/components/elements/buttons/circle-icon-button.svelte';
   import ButtonContextMenu from '$lib/components/shared-components/context-menu/button-context-menu.svelte';
   import MenuOption from '$lib/components/shared-components/context-menu/menu-option.svelte';
@@ -26,6 +28,7 @@
     AssetTypeEnum,
     type AlbumResponseDto,
     type AssetResponseDto,
+    type PersonResponseDto,
     type StackResponseDto,
   } from '@immich/sdk';
   import {
@@ -44,24 +47,51 @@
   } from '@mdi/js';
   import { canCopyImageToClipboard } from '$lib/utils/asset-utils';
   import { t } from 'svelte-i18n';
+  import type { Snippet } from 'svelte';
 
-  export let asset: AssetResponseDto;
-  export let album: AlbumResponseDto | null = null;
-  export let stack: StackResponseDto | null = null;
-  export let showDetailButton: boolean;
-  export let showSlideshow = false;
-  export let onZoomImage: () => void;
-  export let onCopyImage: () => void;
-  export let onAction: OnAction;
-  export let onRunJob: (name: AssetJobName) => void;
-  export let onPlaySlideshow: () => void;
-  export let onShowDetail: () => void;
-  // export let showEditorHandler: () => void;
-  export let onClose: () => void;
+  interface Props {
+    asset: AssetResponseDto;
+    album?: AlbumResponseDto | null;
+    person?: PersonResponseDto | null;
+    stack?: StackResponseDto | null;
+    showCloseButton?: boolean;
+    showDetailButton: boolean;
+    showSlideshow?: boolean;
+    onZoomImage: () => void;
+    onCopyImage?: () => Promise<void>;
+    preAction: PreAction;
+    onAction: OnAction;
+    onRunJob: (name: AssetJobName) => void;
+    onPlaySlideshow: () => void;
+    onShowDetail: () => void;
+    // export let showEditorHandler: () => void;
+    onClose: () => void;
+    motionPhoto?: Snippet;
+  }
+
+  let {
+    asset,
+    album = null,
+    person = null,
+    stack = null,
+    showCloseButton = true,
+    showDetailButton,
+    showSlideshow = false,
+    onZoomImage,
+    onCopyImage,
+    preAction,
+    onAction,
+    onRunJob,
+    onPlaySlideshow,
+    onShowDetail,
+    onClose,
+    motionPhoto,
+  }: Props = $props();
 
   const sharedLink = getSharedLink();
-  $: isOwner = $user && asset.ownerId === $user?.id;
-  $: showDownloadButton = sharedLink ? sharedLink.allowDownload : !asset.isOffline;
+  let isOwner = $derived($user && asset.ownerId === $user?.id);
+  let showDownloadButton = $derived(sharedLink ? sharedLink.allowDownload : !asset.isOffline);
+
   // $: showEditorButton =
   //   isOwner &&
   //   asset.type === AssetTypeEnum.Image &&
@@ -77,20 +107,19 @@
   class="z-[1001] flex h-16 place-items-center justify-between bg-gradient-to-b from-black/40 px-3 transition-transform duration-200"
 >
   <div class="text-white">
-    <CloseAction {onClose} />
+    {#if showCloseButton}
+      <CloseAction {onClose} />
+    {/if}
   </div>
-  <div
-    class="flex w-[calc(100%-3rem)] justify-end gap-2 overflow-hidden text-white"
-    data-testid="asset-viewer-navbar-actions"
-  >
+  <div class="flex gap-2 overflow-x-auto text-white" data-testid="asset-viewer-navbar-actions">
     {#if !asset.isTrashed && $user}
       <ShareAction {asset} />
     {/if}
     {#if asset.isOffline}
-      <CircleIconButton color="alert" icon={mdiAlertOutline} on:click={onShowDetail} title={$t('asset_offline')} />
+      <CircleIconButton color="alert" icon={mdiAlertOutline} onclick={onShowDetail} title={$t('asset_offline')} />
     {/if}
     {#if asset.livePhotoVideoId}
-      <slot name="motion-photo" />
+      {@render motionPhoto?.()}
     {/if}
     {#if asset.type === AssetTypeEnum.Image}
       <CircleIconButton
@@ -98,11 +127,11 @@
         hideMobile={true}
         icon={$photoZoomState && $photoZoomState.currentZoom > 1 ? mdiMagnifyMinusOutline : mdiMagnifyPlusOutline}
         title={$t('zoom_image')}
-        on:click={onZoomImage}
+        onclick={onZoomImage}
       />
     {/if}
     {#if canCopyImageToClipboard() && asset.type === AssetTypeEnum.Image}
-      <CircleIconButton color="opaque" icon={mdiContentCopy} title={$t('copy_image')} on:click={onCopyImage} />
+      <CircleIconButton color="opaque" icon={mdiContentCopy} title={$t('copy_image')} onclick={() => onCopyImage?.()} />
     {/if}
 
     {#if !isOwner && showDownloadButton}
@@ -121,13 +150,13 @@
         color="opaque"
         hideMobile={true}
         icon={mdiImageEditOutline}
-        on:click={showEditorHandler}
+        onclick={showEditorHandler}
         title={$t('editor')}
       />
     {/if} -->
 
     {#if isOwner}
-      <DeleteAction {asset} {onAction} />
+      <DeleteAction {asset} {onAction} {preAction} />
 
       <ButtonContextMenu direction="left" align="top-right" color="opaque" title={$t('more')} icon={mdiDotsVertical}>
         {#if showSlideshow}
@@ -146,14 +175,18 @@
         {#if isOwner}
           {#if stack}
             <UnstackAction {stack} {onAction} />
+            <KeepThisDeleteOthersAction {stack} {asset} {onAction} />
           {/if}
           {#if album}
             <SetAlbumCoverAction {asset} {album} />
           {/if}
+          {#if person}
+            <SetFeaturedPhotoAction {asset} {person} />
+          {/if}
           {#if asset.type === AssetTypeEnum.Image}
             <SetProfilePictureAction {asset} />
           {/if}
-          <ArchiveAction {asset} {onAction} />
+          <ArchiveAction {asset} {onAction} {preAction} />
           <MenuOption
             icon={mdiUpload}
             onClick={() => openFileUploadDialog({ multiple: false, assetId: asset.id })}
@@ -162,7 +195,7 @@
           {#if !asset.isArchived && !asset.isTrashed}
             <MenuOption
               icon={mdiImageSearch}
-              onClick={() => goto(`${AppRoute.PHOTOS}?at=${asset.id}`)}
+              onClick={() => goto(`${AppRoute.PHOTOS}?at=${stack?.primaryAssetId ?? asset.id}`)}
               text={$t('view_in_timeline')}
             />
           {/if}

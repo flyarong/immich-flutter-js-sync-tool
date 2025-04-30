@@ -3,33 +3,36 @@
     notificationController,
     NotificationType,
   } from '$lib/components/shared-components/notification/notification';
+  import SettingAccordion from '$lib/components/shared-components/settings/setting-accordion.svelte';
+  import SettingSwitch from '$lib/components/shared-components/settings/setting-switch.svelte';
+  import { preferences } from '$lib/stores/user.store';
   import { updateMyPreferences } from '@immich/sdk';
+  import { Button } from '@immich/ui';
+  import { t } from 'svelte-i18n';
   import { fade } from 'svelte/transition';
   import { handleError } from '../../utils/handle-error';
 
-  import SettingSwitch from '$lib/components/shared-components/settings/setting-switch.svelte';
-  import { preferences } from '$lib/stores/user.store';
-  import Button from '../elements/buttons/button.svelte';
-  import { t } from 'svelte-i18n';
-  import SettingAccordion from '$lib/components/shared-components/settings/setting-accordion.svelte';
-
   // Folders
-  let foldersEnabled = $preferences?.folders?.enabled ?? false;
-  let foldersSidebar = $preferences?.folders?.sidebarWeb ?? false;
+  let foldersEnabled = $state($preferences?.folders?.enabled ?? false);
+  let foldersSidebar = $state($preferences?.folders?.sidebarWeb ?? false);
 
   // Memories
-  let memoriesEnabled = $preferences?.memories?.enabled ?? true;
+  let memoriesEnabled = $state($preferences?.memories?.enabled ?? true);
 
   // People
-  let peopleEnabled = $preferences?.people?.enabled ?? false;
-  let peopleSidebar = $preferences?.people?.sidebarWeb ?? false;
+  let peopleEnabled = $state($preferences?.people?.enabled ?? false);
+  let peopleSidebar = $state($preferences?.people?.sidebarWeb ?? false);
 
   // Ratings
-  let ratingsEnabled = $preferences?.ratings?.enabled ?? false;
+  let ratingsEnabled = $state($preferences?.ratings?.enabled ?? false);
+
+  // Shared links
+  let sharedLinksEnabled = $state($preferences?.sharedLinks?.enabled ?? true);
+  let sharedLinkSidebar = $state($preferences?.sharedLinks?.sidebarWeb ?? false);
 
   // Tags
-  let tagsEnabled = $preferences?.tags?.enabled ?? false;
-  let tagsSidebar = $preferences?.tags?.sidebarWeb ?? false;
+  let tagsEnabled = $state($preferences?.tags?.enabled ?? false);
+  let tagsSidebar = $state($preferences?.tags?.sidebarWeb ?? false);
 
   const handleSave = async () => {
     try {
@@ -39,6 +42,7 @@
           memories: { enabled: memoriesEnabled },
           people: { enabled: peopleEnabled, sidebarWeb: peopleSidebar },
           ratings: { enabled: ratingsEnabled },
+          sharedLinks: { enabled: sharedLinksEnabled, sidebarWeb: sharedLinkSidebar },
           tags: { enabled: tagsEnabled, sidebarWeb: tagsSidebar },
         },
       });
@@ -50,19 +54,23 @@
       handleError(error, $t('errors.unable_to_update_settings'));
     }
   };
+
+  const onsubmit = (event: Event) => {
+    event.preventDefault();
+  };
 </script>
 
 <section class="my-4">
   <div in:fade={{ duration: 500 }}>
-    <form autocomplete="off" on:submit|preventDefault>
-      <div class="ml-4 mt-4 flex flex-col">
+    <form autocomplete="off" {onsubmit}>
+      <div class="ms-4 mt-4 flex flex-col">
         <SettingAccordion key="folders" title={$t('folders')} subtitle={$t('folders_feature_description')}>
-          <div class="ml-4 mt-6">
+          <div class="ms-4 mt-6">
             <SettingSwitch title={$t('enable')} bind:checked={foldersEnabled} />
           </div>
 
           {#if foldersEnabled}
-            <div class="ml-4 mt-6">
+            <div class="ms-4 mt-6">
               <SettingSwitch
                 title={$t('sidebar')}
                 subtitle={$t('sidebar_display_description')}
@@ -73,18 +81,18 @@
         </SettingAccordion>
 
         <SettingAccordion key="memories" title={$t('time_based_memories')} subtitle={$t('photos_from_previous_years')}>
-          <div class="ml-4 mt-6">
+          <div class="ms-4 mt-6">
             <SettingSwitch title={$t('enable')} bind:checked={memoriesEnabled} />
           </div>
         </SettingAccordion>
 
         <SettingAccordion key="people" title={$t('people')} subtitle={$t('people_feature_description')}>
-          <div class="ml-4 mt-6">
+          <div class="ms-4 mt-6">
             <SettingSwitch title={$t('enable')} bind:checked={peopleEnabled} />
           </div>
 
           {#if peopleEnabled}
-            <div class="ml-4 mt-6">
+            <div class="ms-4 mt-6">
               <SettingSwitch
                 title={$t('sidebar')}
                 subtitle={$t('sidebar_display_description')}
@@ -95,17 +103,32 @@
         </SettingAccordion>
 
         <SettingAccordion key="rating" title={$t('rating')} subtitle={$t('rating_description')}>
-          <div class="ml-4 mt-6">
+          <div class="ms-4 mt-6">
             <SettingSwitch title={$t('enable')} bind:checked={ratingsEnabled} />
           </div>
         </SettingAccordion>
 
+        <SettingAccordion key="shared-links" title={$t('shared_links')} subtitle={$t('shared_links_description')}>
+          <div class="ms-4 mt-6">
+            <SettingSwitch title={$t('enable')} bind:checked={sharedLinksEnabled} />
+          </div>
+          {#if sharedLinksEnabled}
+            <div class="ms-4 mt-6">
+              <SettingSwitch
+                title={$t('sidebar')}
+                subtitle={$t('sidebar_display_description')}
+                bind:checked={sharedLinkSidebar}
+              />
+            </div>
+          {/if}
+        </SettingAccordion>
+
         <SettingAccordion key="tags" title={$t('tags')} subtitle={$t('tag_feature_description')}>
-          <div class="ml-4 mt-6">
+          <div class="ms-4 mt-6">
             <SettingSwitch title={$t('enable')} bind:checked={tagsEnabled} />
           </div>
           {#if tagsEnabled}
-            <div class="ml-4 mt-6">
+            <div class="ms-4 mt-6">
               <SettingSwitch
                 title={$t('sidebar')}
                 subtitle={$t('sidebar_display_description')}
@@ -116,7 +139,7 @@
         </SettingAccordion>
 
         <div class="flex justify-end">
-          <Button type="submit" size="sm" on:click={() => handleSave()}>{$t('save')}</Button>
+          <Button shape="round" type="submit" size="small" onclick={() => handleSave()}>{$t('save')}</Button>
         </div>
       </div>
     </form>

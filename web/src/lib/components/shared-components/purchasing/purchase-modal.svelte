@@ -5,13 +5,17 @@
 
   import Portal from '$lib/components/shared-components/portal/portal.svelte';
 
-  export let onClose: () => void;
+  interface Props {
+    onClose: () => void;
+  }
 
-  let showProductActivated = false;
+  let { onClose }: Props = $props();
+
+  let showProductActivated = $state(false);
 </script>
 
 <Portal>
-  <FullScreenModal showLogo title={''} {onClose} width="wide">
+  <FullScreenModal showLogo title="" {onClose} width="wide">
     {#if showProductActivated}
       <PurchaseActivationSuccess onDone={onClose} />
     {:else}

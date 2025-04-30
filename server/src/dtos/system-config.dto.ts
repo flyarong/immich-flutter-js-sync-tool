@@ -1,6 +1,7 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { Type } from 'class-transformer';
+import { Exclude, Transform, Type } from 'class-transformer';
 import {
+  ArrayMinSize,
   IsBoolean,
   IsEnum,
   IsInt,
@@ -12,13 +13,11 @@ import {
   IsUrl,
   Max,
   Min,
-  Validate,
   ValidateIf,
   ValidateNested,
-  ValidatorConstraint,
-  ValidatorConstraintInterface,
 } from 'class-validator';
 import { SystemConfig } from 'src/config';
+import { PropertyLifecycle } from 'src/decorators';
 import { CLIPConfig, DuplicateDetectionConfig, FacialRecognitionConfig } from 'src/dtos/model-config.dto';
 import {
   AudioCodec,
@@ -26,26 +25,45 @@ import {
   Colorspace,
   ImageFormat,
   LogLevel,
+  OAuthTokenEndpointAuthMethod,
+  QueueName,
   ToneMapping,
   TranscodeHWAccel,
   TranscodePolicy,
   VideoCodec,
   VideoContainer,
 } from 'src/enum';
-import { ConcurrentQueueName, QueueName } from 'src/interfaces/job.interface';
-import { ValidateBoolean, validateCronExpression } from 'src/validation';
-
-@ValidatorConstraint({ name: 'cronValidator' })
-class CronValidator implements ValidatorConstraintInterface {
-  validate(expression: string): boolean {
-    return validateCronExpression(expression);
-  }
-}
+import { ConcurrentQueueName } from 'src/types';
+import { IsCronExpression, Optional, ValidateBoolean } from 'src/validation';
 
 const isLibraryScanEnabled = (config: SystemConfigLibraryScanDto) => config.enabled;
 const isOAuthEnabled = (config: SystemConfigOAuthDto) => config.enabled;
 const isOAuthOverrideEnabled = (config: SystemConfigOAuthDto) => config.mobileOverrideEnabled;
 const isEmailNotificationEnabled = (config: SystemConfigSmtpDto) => config.enabled;
+const isDatabaseBackupEnabled = (config: DatabaseBackupConfig) => config.enabled;
+
+export class DatabaseBackupConfig {
+  @ValidateBoolean()
+  enabled!: boolean;
+
+  @ValidateIf(isDatabaseBackupEnabled)
+  @IsNotEmpty()
+  @IsCronExpression()
+  @IsString()
+  cronExpression!: string;
+
+  @IsInt()
+  @IsPositive()
+  @IsNotEmpty()
+  keepLastAmount!: number;
+}
+
+export class SystemConfigBackupsDto {
+  @Type(() => DatabaseBackupConfig)
+  @ValidateNested()
+  @IsObject()
+  database!: DatabaseBackupConfig;
+}
 
 export class SystemConfigFFmpegDto {
   @IsInt()
@@ -109,12 +127,6 @@ export class SystemConfigFFmpegDto {
   @Type(() => Number)
   @ApiProperty({ type: 'integer' })
   gopSize!: number;
-
-  @IsInt()
-  @Min(0)
-  @Type(() => Number)
-  @ApiProperty({ type: 'integer' })
-  npl!: number;
 
   @ValidateBoolean()
   temporalAQ!: boolean;
@@ -226,7 +238,7 @@ class SystemConfigLibraryScanDto {
 
   @ValidateIf(isLibraryScanEnabled)
   @IsNotEmpty()
-  @Validate(CronValidator, { message: 'Invalid cron expression' })
+  @IsCronExpression()
   @IsString()
   cronExpression!: string;
 }
@@ -261,9 +273,16 @@ class SystemConfigMachineLearningDto {
   @ValidateBoolean()
   enabled!: boolean;
 
-  @IsUrl({ require_tld: false, allow_underscores: true })
+  @PropertyLifecycle({ deprecatedAt: 'v1.122.0' })
+  @Exclude()
+  url?: string;
+
+  @IsUrl({ require_tld: false, allow_underscores: true }, { each: true })
+  @ArrayMinSize(1)
+  @Transform(({ obj, value }) => (obj.url ? [obj.url] : value))
   @ValidateIf((dto) => dto.enabled)
-  url!: string;
+  @ApiProperty({ type: 'array', items: { type: 'string', format: 'uri' }, minItems: 1 })
+  urls!: string[];
 
   @Type(() => CLIPConfig)
   @ValidateNested()
@@ -326,9 +345,18 @@ class SystemConfigOAuthDto {
   clientId!: string;
 
   @ValidateIf(isOAuthEnabled)
-  @IsNotEmpty()
   @IsString()
   clientSecret!: string;
+
+  @IsEnum(OAuthTokenEndpointAuthMethod)
+  @ApiProperty({ enum: OAuthTokenEndpointAuthMethod, enumName: 'OAuthTokenEndpointAuthMethod' })
+  tokenEndpointAuthMethod!: OAuthTokenEndpointAuthMethod;
+
+  @IsInt()
+  @IsPositive()
+  @Optional()
+  @ApiProperty({ type: 'integer' })
+  timeout!: number;
 
   @IsNumber()
   @Min(0)
@@ -396,6 +424,9 @@ class SystemConfigServerDto {
 
   @IsString()
   loginPageMessage!: string;
+
+  @IsBoolean()
+  publicUsers!: boolean;
 }
 
 class SystemConfigSmtpTransportDto {
@@ -445,6 +476,24 @@ class SystemConfigNotificationsDto {
   smtp!: SystemConfigSmtpDto;
 }
 
+class SystemConfigTemplateEmailsDto {
+  @IsString()
+  albumInviteTemplate!: string;
+
+  @IsString()
+  welcomeTemplate!: string;
+
+  @IsString()
+  albumUpdateTemplate!: string;
+}
+
+class SystemConfigTemplatesDto {
+  @Type(() => SystemConfigTemplateEmailsDto)
+  @ValidateNested()
+  @IsObject()
+  email!: SystemConfigTemplateEmailsDto;
+}
+
 class SystemConfigStorageTemplateDto {
   @ValidateBoolean()
   enabled!: boolean;
@@ -492,6 +541,24 @@ class SystemConfigGeneratedImageDto {
   size!: number;
 }
 
+class SystemConfigGeneratedFullsizeImageDto {
+  @IsBoolean()
+  @Type(() => Boolean)
+  @ApiProperty({ type: 'boolean' })
+  enabled!: boolean;
+
+  @IsEnum(ImageFormat)
+  @ApiProperty({ enumName: 'ImageFormat', enum: ImageFormat })
+  format!: ImageFormat;
+
+  @IsInt()
+  @Min(1)
+  @Max(100)
+  @Type(() => Number)
+  @ApiProperty({ type: 'integer' })
+  quality!: number;
+}
+
 export class SystemConfigImageDto {
   @Type(() => SystemConfigGeneratedImageDto)
   @ValidateNested()
@@ -502,6 +569,11 @@ export class SystemConfigImageDto {
   @ValidateNested()
   @IsObject()
   preview!: SystemConfigGeneratedImageDto;
+
+  @Type(() => SystemConfigGeneratedFullsizeImageDto)
+  @ValidateNested()
+  @IsObject()
+  fullsize!: SystemConfigGeneratedFullsizeImageDto;
 
   @IsEnum(Colorspace)
   @ApiProperty({ enumName: 'Colorspace', enum: Colorspace })
@@ -531,6 +603,11 @@ class SystemConfigUserDto {
 }
 
 export class SystemConfigDto implements SystemConfig {
+  @Type(() => SystemConfigBackupsDto)
+  @ValidateNested()
+  @IsObject()
+  backup!: SystemConfigBackupsDto;
+
   @Type(() => SystemConfigFFmpegDto)
   @ValidateNested()
   @IsObject()
@@ -610,6 +687,11 @@ export class SystemConfigDto implements SystemConfig {
   @ValidateNested()
   @IsObject()
   notifications!: SystemConfigNotificationsDto;
+
+  @Type(() => SystemConfigTemplatesDto)
+  @ValidateNested()
+  @IsObject()
+  templates!: SystemConfigTemplatesDto;
 
   @Type(() => SystemConfigServerDto)
   @ValidateNested()

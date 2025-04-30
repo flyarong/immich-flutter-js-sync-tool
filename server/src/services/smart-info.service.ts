@@ -1,36 +1,21 @@
 import { Injectable } from '@nestjs/common';
 import { SystemConfig } from 'src/config';
-import { OnEvent } from 'src/decorators';
-import { ImmichWorker } from 'src/enum';
-import { WithoutProperty } from 'src/interfaces/asset.interface';
-import { DatabaseLock } from 'src/interfaces/database.interface';
-import { ArgOf } from 'src/interfaces/event.interface';
-import {
-  IBaseJob,
-  IEntityJob,
-  JOBS_ASSET_PAGINATION_SIZE,
-  JobName,
-  JobStatus,
-  QueueName,
-} from 'src/interfaces/job.interface';
+import { JOBS_ASSET_PAGINATION_SIZE } from 'src/constants';
+import { OnEvent, OnJob } from 'src/decorators';
+import { DatabaseLock, ImmichWorker, JobName, JobStatus, QueueName } from 'src/enum';
+import { ArgOf } from 'src/repositories/event.repository';
 import { BaseService } from 'src/services/base.service';
-import { getAssetFiles } from 'src/utils/asset.util';
+import { JobItem, JobOf } from 'src/types';
 import { getCLIPModelInfo, isSmartSearchEnabled } from 'src/utils/misc';
-import { usePagination } from 'src/utils/pagination';
 
 @Injectable()
 export class SmartInfoService extends BaseService {
-  @OnEvent({ name: 'app.bootstrap' })
-  async onBootstrap(app: ArgOf<'app.bootstrap'>) {
-    if (app !== ImmichWorker.MICROSERVICES) {
-      return;
-    }
-
-    const config = await this.getConfig({ withCache: false });
-    await this.init(config);
+  @OnEvent({ name: 'config.init', workers: [ImmichWorker.MICROSERVICES] })
+  async onConfigInit({ newConfig }: ArgOf<'config.init'>) {
+    await this.init(newConfig);
   }
 
-  @OnEvent({ name: 'config.update' })
+  @OnEvent({ name: 'config.update', workers: [ImmichWorker.MICROSERVICES], server: true })
   async onConfigUpdate({ oldConfig, newConfig }: ArgOf<'config.update'>) {
     await this.init(newConfig, oldConfig);
   }
@@ -63,12 +48,6 @@ export class SmartInfoService extends BaseService {
         return;
       }
 
-      const { isPaused } = await this.jobRepository.getQueueStatus(QueueName.SMART_SEARCH);
-      if (!isPaused) {
-        await this.jobRepository.pause(QueueName.SMART_SEARCH);
-      }
-      await this.jobRepository.waitForQueueCompletion(QueueName.SMART_SEARCH);
-
       if (dimSizeChange) {
         this.logger.log(
           `Dimension size of model ${newConfig.machineLearning.clip.modelName} is ${dimSize}, but database expects ${dbDimSize}.`,
@@ -80,45 +59,48 @@ export class SmartInfoService extends BaseService {
         await this.searchRepository.deleteAllSearchEmbeddings();
       }
 
-      if (!isPaused) {
-        await this.jobRepository.resume(QueueName.SMART_SEARCH);
-      }
+      // TODO: A job to reindex all assets should be scheduled, though user
+      // confirmation should probably be requested before doing that.
     });
   }
 
-  async handleQueueEncodeClip({ force }: IBaseJob): Promise<JobStatus> {
+  @OnJob({ name: JobName.QUEUE_SMART_SEARCH, queue: QueueName.SMART_SEARCH })
+  async handleQueueEncodeClip({ force }: JobOf<JobName.QUEUE_SMART_SEARCH>): Promise<JobStatus> {
     const { machineLearning } = await this.getConfig({ withCache: false });
     if (!isSmartSearchEnabled(machineLearning)) {
       return JobStatus.SKIPPED;
     }
 
     if (force) {
-      await this.searchRepository.deleteAllSearchEmbeddings();
+      const { dimSize } = getCLIPModelInfo(machineLearning.clip.modelName);
+      // in addition to deleting embeddings, update the dimension size in case it failed earlier
+      await this.searchRepository.setDimensionSize(dimSize);
     }
 
-    const assetPagination = usePagination(JOBS_ASSET_PAGINATION_SIZE, (pagination) => {
-      return force
-        ? this.assetRepository.getAll(pagination, { isVisible: true })
-        : this.assetRepository.getWithout(pagination, WithoutProperty.SMART_SEARCH);
-    });
-
-    for await (const assets of assetPagination) {
-      await this.jobRepository.queueAll(
-        assets.map((asset) => ({ name: JobName.SMART_SEARCH, data: { id: asset.id } })),
-      );
+    let queue: JobItem[] = [];
+    const assets = this.assetJobRepository.streamForEncodeClip(force);
+    for await (const asset of assets) {
+      queue.push({ name: JobName.SMART_SEARCH, data: { id: asset.id } });
+      if (queue.length >= JOBS_ASSET_PAGINATION_SIZE) {
+        await this.jobRepository.queueAll(queue);
+        queue = [];
+      }
     }
+
+    await this.jobRepository.queueAll(queue);
 
     return JobStatus.SUCCESS;
   }
 
-  async handleEncodeClip({ id }: IEntityJob): Promise<JobStatus> {
+  @OnJob({ name: JobName.SMART_SEARCH, queue: QueueName.SMART_SEARCH })
+  async handleEncodeClip({ id }: JobOf<JobName.SMART_SEARCH>): Promise<JobStatus> {
     const { machineLearning } = await this.getConfig({ withCache: true });
     if (!isSmartSearchEnabled(machineLearning)) {
       return JobStatus.SKIPPED;
     }
 
-    const [asset] = await this.assetRepository.getByIds([id], { files: true });
-    if (!asset) {
+    const asset = await this.assetJobRepository.getForClipEncoding(id);
+    if (!asset || asset.files.length !== 1) {
       return JobStatus.FAILED;
     }
 
@@ -126,20 +108,21 @@ export class SmartInfoService extends BaseService {
       return JobStatus.SKIPPED;
     }
 
-    const { previewFile } = getAssetFiles(asset.files);
-    if (!previewFile) {
-      return JobStatus.FAILED;
-    }
-
     const embedding = await this.machineLearningRepository.encodeImage(
-      machineLearning.url,
-      previewFile.path,
+      machineLearning.urls,
+      asset.files[0].path,
       machineLearning.clip,
     );
 
     if (this.databaseRepository.isBusy(DatabaseLock.CLIPDimSize)) {
       this.logger.verbose(`Waiting for CLIP dimension size to be updated`);
       await this.databaseRepository.wait(DatabaseLock.CLIPDimSize);
+    }
+
+    const newConfig = await this.getConfig({ withCache: true });
+    if (machineLearning.clip.modelName !== newConfig.machineLearning.clip.modelName) {
+      // Skip the job if the the model has changed since the embedding was generated.
+      return JobStatus.SKIPPED;
     }
 
     await this.searchRepository.upsert(asset.id, embedding);

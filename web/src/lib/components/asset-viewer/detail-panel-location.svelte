@@ -7,10 +7,14 @@
   import { mdiMapMarkerOutline, mdiPencil } from '@mdi/js';
   import { t } from 'svelte-i18n';
 
-  export let isOwner: boolean;
-  export let asset: AssetResponseDto;
+  interface Props {
+    isOwner: boolean;
+    asset: AssetResponseDto;
+  }
 
-  let isShowChangeLocation = false;
+  let { isOwner, asset = $bindable() }: Props = $props();
+
+  let isShowChangeLocation = $state(false);
 
   async function handleConfirmChangeLocation(gps: { lng: number; lat: number }) {
     isShowChangeLocation = false;
@@ -29,8 +33,8 @@
 {#if asset.exifInfo?.country}
   <button
     type="button"
-    class="flex w-full text-left justify-between place-items-start gap-4 py-4"
-    on:click={() => (isOwner ? (isShowChangeLocation = true) : null)}
+    class="flex w-full text-start justify-between place-items-start gap-4 py-4"
+    onclick={() => (isOwner ? (isShowChangeLocation = true) : null)}
     title={isOwner ? $t('edit_location') : ''}
     class:hover:dark:text-immich-dark-primary={isOwner}
     class:hover:text-immich-primary={isOwner}
@@ -64,8 +68,8 @@
 {:else if !asset.exifInfo?.city && isOwner}
   <button
     type="button"
-    class="flex w-full text-left justify-between place-items-start gap-4 py-4 rounded-lg hover:dark:text-immich-dark-primary hover:text-immich-primary"
-    on:click={() => (isShowChangeLocation = true)}
+    class="flex w-full text-start justify-between place-items-start gap-4 py-4 rounded-lg hover:dark:text-immich-dark-primary hover:text-immich-primary"
+    onclick={() => (isShowChangeLocation = true)}
     title={$t('add_location')}
   >
     <div class="flex gap-4">

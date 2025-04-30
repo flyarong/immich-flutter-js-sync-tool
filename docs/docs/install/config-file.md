@@ -1,3 +1,7 @@
+---
+sidebar_position: 100
+---
+
 # Config File
 
 A config file can be provided as an alternative to the UI configuration.
@@ -19,14 +23,13 @@ The default configuration looks like this:
     "targetVideoCodec": "h264",
     "acceptedVideoCodecs": ["h264"],
     "targetAudioCodec": "aac",
-    "acceptedAudioCodecs": ["aac", "mp3", "libopus"],
+    "acceptedAudioCodecs": ["aac", "mp3", "libopus", "pcm_s16le"],
     "acceptedContainers": ["mov", "ogg", "webm"],
     "targetResolution": "720",
     "maxBitrate": "0",
     "bframes": -1,
     "refs": 0,
     "gopSize": 0,
-    "npl": 0,
     "temporalAQ": false,
     "cqMode": "auto",
     "twoPass": false,
@@ -35,6 +38,13 @@ The default configuration looks like this:
     "tonemap": "hable",
     "accel": "disabled",
     "accelDecode": false
+  },
+  "backup": {
+    "database": {
+      "enabled": true,
+      "cronExpression": "0 02 * * *",
+      "keepLastAmount": 14
+    }
   },
   "job": {
     "backgroundTask": {
@@ -77,7 +87,7 @@ The default configuration looks like this:
   },
   "machineLearning": {
     "enabled": true,
-    "url": "http://immich-machine-learning:3003",
+    "urls": ["http://immich-machine-learning:3003"],
     "clip": {
       "enabled": true,
       "modelName": "ViT-B-32__openai"

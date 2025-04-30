@@ -7,14 +7,22 @@
   import StatsCard from './stats-card.svelte';
   import { t } from 'svelte-i18n';
 
-  export let stats: ServerStatsResponseDto = {
-    photos: 0,
-    videos: 0,
-    usage: 0,
-    usageByUser: [],
-  };
+  interface Props {
+    stats?: ServerStatsResponseDto;
+  }
 
-  $: zeros = (value: number) => {
+  let {
+    stats = {
+      photos: 0,
+      videos: 0,
+      usage: 0,
+      usagePhotos: 0,
+      usageVideos: 0,
+      usageByUser: [],
+    },
+  }: Props = $props();
+
+  const zeros = (value: number) => {
     const maxLength = 13;
     const valueLength = value.toString().length;
     const zeroLength = maxLength - valueLength;
@@ -23,7 +31,7 @@
   };
 
   const TiB = 1024 ** 4;
-  $: [statsUsage, statsUsageUnit] = getBytesWithUnit(stats.usage, stats.usage > TiB ? 2 : 0);
+  let [statsUsage, statsUsageUnit] = $derived(getBytesWithUnit(stats.usage, stats.usage > TiB ? 2 : 0));
 </script>
 
 <div class="flex flex-col gap-5">
@@ -71,7 +79,7 @@
             <span class="text-[#DCDADA] dark:text-[#525252]">{zeros(statsUsage)}</span><span
               class="text-immich-primary dark:text-immich-dark-primary">{statsUsage}</span
             >
-            <span class="my-auto ml-2 text-center text-base font-light text-gray-400">{statsUsageUnit}</span>
+            <span class="my-auto ms-2 text-center text-base font-light text-gray-400">{statsUsageUnit}</span>
           </div>
         </div>
       </div>
@@ -80,7 +88,7 @@
 
   <div>
     <p class="text-sm dark:text-immich-dark-fg">{$t('user_usage_detail').toUpperCase()}</p>
-    <table class="mt-5 w-full text-left">
+    <table class="mt-5 w-full text-start">
       <thead
         class="mb-4 flex h-12 w-full rounded-md border bg-gray-50 text-immich-primary dark:border-immich-dark-gray dark:bg-immich-dark-gray dark:text-immich-dark-primary"
       >
@@ -99,8 +107,12 @@
             class="flex h-[50px] w-full place-items-center text-center odd:bg-immich-gray even:bg-immich-bg odd:dark:bg-immich-dark-gray/75 even:dark:bg-immich-dark-gray/50"
           >
             <td class="w-1/4 text-ellipsis px-2 text-sm">{user.userName}</td>
-            <td class="w-1/4 text-ellipsis px-2 text-sm">{user.photos.toLocaleString($locale)}</td>
-            <td class="w-1/4 text-ellipsis px-2 text-sm">{user.videos.toLocaleString($locale)}</td>
+            <td class="w-1/4 text-ellipsis px-2 text-sm"
+              >{user.photos.toLocaleString($locale)} ({getByteUnitString(user.usagePhotos, $locale, 0)})</td
+            >
+            <td class="w-1/4 text-ellipsis px-2 text-sm"
+              >{user.videos.toLocaleString($locale)} ({getByteUnitString(user.usageVideos, $locale, 0)})</td
+            >
             <td class="w-1/4 text-ellipsis px-2 text-sm">
               {getByteUnitString(user.usage, $locale, 0)}
               {#if user.quotaSizeInBytes}

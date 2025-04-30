@@ -1,7 +1,10 @@
 import 'package:hooks_riverpod/hooks_riverpod.dart';
+import 'package:immich_mobile/constants/enums.dart';
 import 'package:immich_mobile/entities/album.entity.dart';
 import 'package:immich_mobile/entities/asset.entity.dart';
-import 'package:immich_mobile/entities/user.entity.dart';
+import 'package:immich_mobile/infrastructure/entities/user.entity.dart'
+    as entity;
+import 'package:immich_mobile/infrastructure/utils/user.converter.dart';
 import 'package:immich_mobile/interfaces/album_api.interface.dart';
 import 'package:immich_mobile/providers/api.provider.dart';
 import 'package:immich_mobile/repositories/api.repository.dart';
@@ -56,7 +59,13 @@ class AlbumApiRepository extends ApiRepository implements IAlbumApiRepository {
     String? thumbnailAssetId,
     String? description,
     bool? activityEnabled,
+    SortOrder? sortOrder,
   }) async {
+    AssetOrder? order;
+    if (sortOrder != null) {
+      order = sortOrder == SortOrder.asc ? AssetOrder.asc : AssetOrder.desc;
+    }
+
     final response = await checkNull(
       _api.updateAlbumInfo(
         albumId,
@@ -65,9 +74,11 @@ class AlbumApiRepository extends ApiRepository implements IAlbumApiRepository {
           albumThumbnailAssetId: thumbnailAssetId,
           description: description,
           isActivityEnabled: activityEnabled,
+          order: order,
         ),
       ),
     );
+
     return _toAlbum(response);
   }
 
@@ -152,13 +163,15 @@ class AlbumApiRepository extends ApiRepository implements IAlbumApiRepository {
       startDate: dto.startDate,
       endDate: dto.endDate,
       activityEnabled: dto.isActivityEnabled,
+      sortOrder: dto.order == AssetOrder.asc ? SortOrder.asc : SortOrder.desc,
     );
     album.remoteAssetCount = dto.assetCount;
-    album.owner.value = User.fromSimpleUserDto(dto.owner);
+    album.owner.value =
+        entity.User.fromDto(UserConverter.fromSimpleUserDto(dto.owner));
     album.remoteThumbnailAssetId = dto.albumThumbnailAssetId;
     final users = dto.albumUsers
-        .map((albumUser) => User.fromSimpleUserDto(albumUser.user));
-    album.sharedUsers.addAll(users);
+        .map((albumUser) => UserConverter.fromSimpleUserDto(albumUser.user));
+    album.sharedUsers.addAll(users.map(entity.User.fromDto));
     final assets = dto.assets.map(Asset.remote).toList();
     album.assets.addAll(assets);
     return album;

@@ -1,4 +1,7 @@
 <script lang="ts">
+  import { dialogController } from '$lib/components/shared-components/dialog/dialog';
+  import SettingSwitch from '$lib/components/shared-components/settings/setting-switch.svelte';
+  import UserAvatar from '$lib/components/shared-components/user-avatar.svelte';
   import {
     createPartner,
     getPartners,
@@ -8,17 +11,14 @@
     type PartnerResponseDto,
     type UserResponseDto,
   } from '@immich/sdk';
+  import { Button } from '@immich/ui';
   import { mdiCheck, mdiClose } from '@mdi/js';
   import { onMount } from 'svelte';
+  import { t } from 'svelte-i18n';
   import { handleError } from '../../utils/handle-error';
-  import Button from '../elements/buttons/button.svelte';
   import CircleIconButton from '../elements/buttons/circle-icon-button.svelte';
   import Icon from '../elements/icon.svelte';
-  import UserAvatar from '$lib/components/shared-components/user-avatar.svelte';
   import PartnerSelectionModal from './partner-selection-modal.svelte';
-  import SettingSwitch from '$lib/components/shared-components/settings/setting-switch.svelte';
-  import { dialogController } from '$lib/components/shared-components/dialog/dialog';
-  import { t } from 'svelte-i18n';
 
   interface PartnerSharing {
     user: UserResponseDto;
@@ -27,11 +27,15 @@
     inTimeline: boolean;
   }
 
-  export let user: UserResponseDto;
+  interface Props {
+    user: UserResponseDto;
+  }
 
-  let createPartnerFlag = false;
+  let { user }: Props = $props();
+
+  let createPartnerFlag = $state(false);
   // let removePartnerDto: PartnerResponseDto | null = null;
-  let partners: Array<PartnerSharing> = [];
+  let partners: Array<PartnerSharing> = $state([]);
 
   onMount(async () => {
     await refreshPartners();
@@ -60,10 +64,7 @@
     for (const candidate of sharedWith) {
       const existIndex = partners.findIndex((p) => candidate.id === p.user.id);
 
-      if (existIndex >= 0) {
-        partners[existIndex].sharedWithMe = true;
-        partners[existIndex].inTimeline = candidate.inTimeline ?? false;
-      } else {
+      if (existIndex === -1) {
         partners = [
           ...partners,
           {
@@ -73,6 +74,9 @@
             inTimeline: candidate.inTimeline ?? false,
           },
         ];
+      } else {
+        partners[existIndex].sharedWithMe = true;
+        partners[existIndex].inTimeline = candidate.inTimeline ?? false;
       }
     }
   };
@@ -113,7 +117,6 @@
       await updatePartner({ id: partner.user.id, updatePartnerDto: { inTimeline } });
 
       partner.inTimeline = inTimeline;
-      partners = partners;
     } catch (error) {
       handleError(error, $t('errors.unable_to_update_timeline_display_status'));
     }
@@ -127,7 +130,7 @@
         <div class="flex gap-4 rounded-lg pb-4 transition-all justify-between">
           <div class="flex gap-4">
             <UserAvatar user={partner.user} size="md" />
-            <div class="text-left">
+            <div class="text-start">
               <p class="text-immich-fg dark:text-immich-dark-fg">
                 {partner.user.name}
               </p>
@@ -139,9 +142,9 @@
 
           {#if partner.sharedByMe}
             <CircleIconButton
-              on:click={() => handleRemovePartner(partner.user)}
+              onclick={() => handleRemovePartner(partner.user)}
               icon={mdiClose}
-              size={'16'}
+              size="16"
               title={$t('stop_sharing_photos_with_user')}
             />
           {/if}
@@ -186,7 +189,7 @@
   {/if}
 
   <div class="flex justify-end mt-5">
-    <Button size="sm" on:click={() => (createPartnerFlag = true)}>{$t('add_partner')}</Button>
+    <Button shape="round" size="small" onclick={() => (createPartnerFlag = true)}>{$t('add_partner')}</Button>
   </div>
 </section>
 

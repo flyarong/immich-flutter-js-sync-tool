@@ -13,7 +13,6 @@ part of openapi.api;
 class UserPreferencesResponseDto {
   /// Returns a new [UserPreferencesResponseDto] instance.
   UserPreferencesResponseDto({
-    required this.avatar,
     required this.download,
     required this.emailNotifications,
     required this.folders,
@@ -21,10 +20,9 @@ class UserPreferencesResponseDto {
     required this.people,
     required this.purchase,
     required this.ratings,
+    required this.sharedLinks,
     required this.tags,
   });
-
-  AvatarResponse avatar;
 
   DownloadResponse download;
 
@@ -40,11 +38,12 @@ class UserPreferencesResponseDto {
 
   RatingsResponse ratings;
 
+  SharedLinksResponse sharedLinks;
+
   TagsResponse tags;
 
   @override
   bool operator ==(Object other) => identical(this, other) || other is UserPreferencesResponseDto &&
-    other.avatar == avatar &&
     other.download == download &&
     other.emailNotifications == emailNotifications &&
     other.folders == folders &&
@@ -52,12 +51,12 @@ class UserPreferencesResponseDto {
     other.people == people &&
     other.purchase == purchase &&
     other.ratings == ratings &&
+    other.sharedLinks == sharedLinks &&
     other.tags == tags;
 
   @override
   int get hashCode =>
     // ignore: unnecessary_parenthesis
-    (avatar.hashCode) +
     (download.hashCode) +
     (emailNotifications.hashCode) +
     (folders.hashCode) +
@@ -65,14 +64,14 @@ class UserPreferencesResponseDto {
     (people.hashCode) +
     (purchase.hashCode) +
     (ratings.hashCode) +
+    (sharedLinks.hashCode) +
     (tags.hashCode);
 
   @override
-  String toString() => 'UserPreferencesResponseDto[avatar=$avatar, download=$download, emailNotifications=$emailNotifications, folders=$folders, memories=$memories, people=$people, purchase=$purchase, ratings=$ratings, tags=$tags]';
+  String toString() => 'UserPreferencesResponseDto[download=$download, emailNotifications=$emailNotifications, folders=$folders, memories=$memories, people=$people, purchase=$purchase, ratings=$ratings, sharedLinks=$sharedLinks, tags=$tags]';
 
   Map<String, dynamic> toJson() {
     final json = <String, dynamic>{};
-      json[r'avatar'] = this.avatar;
       json[r'download'] = this.download;
       json[r'emailNotifications'] = this.emailNotifications;
       json[r'folders'] = this.folders;
@@ -80,6 +79,7 @@ class UserPreferencesResponseDto {
       json[r'people'] = this.people;
       json[r'purchase'] = this.purchase;
       json[r'ratings'] = this.ratings;
+      json[r'sharedLinks'] = this.sharedLinks;
       json[r'tags'] = this.tags;
     return json;
   }
@@ -93,7 +93,6 @@ class UserPreferencesResponseDto {
       final json = value.cast<String, dynamic>();
 
       return UserPreferencesResponseDto(
-        avatar: AvatarResponse.fromJson(json[r'avatar'])!,
         download: DownloadResponse.fromJson(json[r'download'])!,
         emailNotifications: EmailNotificationsResponse.fromJson(json[r'emailNotifications'])!,
         folders: FoldersResponse.fromJson(json[r'folders'])!,
@@ -101,6 +100,7 @@ class UserPreferencesResponseDto {
         people: PeopleResponse.fromJson(json[r'people'])!,
         purchase: PurchaseResponse.fromJson(json[r'purchase'])!,
         ratings: RatingsResponse.fromJson(json[r'ratings'])!,
+        sharedLinks: SharedLinksResponse.fromJson(json[r'sharedLinks'])!,
         tags: TagsResponse.fromJson(json[r'tags'])!,
       );
     }
@@ -149,7 +149,6 @@ class UserPreferencesResponseDto {
 
   /// The list of required keys that must be present in a JSON.
   static const requiredKeys = <String>{
-    'avatar',
     'download',
     'emailNotifications',
     'folders',
@@ -157,6 +156,7 @@ class UserPreferencesResponseDto {
     'people',
     'purchase',
     'ratings',
+    'sharedLinks',
     'tags',
   };
 }

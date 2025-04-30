@@ -1,8 +1,8 @@
 import { ApiProperty } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
 import { IsDateString, IsEnum, IsInt, IsPositive, ValidateNested } from 'class-validator';
-import { UserPreferences } from 'src/entities/user-metadata.entity';
 import { UserAvatarColor } from 'src/enum';
+import { UserPreferences } from 'src/types';
 import { Optional, ValidateBoolean } from 'src/validation';
 
 class AvatarUpdate {
@@ -31,6 +31,14 @@ class FoldersUpdate {
 }
 
 class PeopleUpdate {
+  @ValidateBoolean({ optional: true })
+  enabled?: boolean;
+
+  @ValidateBoolean({ optional: true })
+  sidebarWeb?: boolean;
+}
+
+class SharedLinksUpdate {
   @ValidateBoolean({ optional: true })
   enabled?: boolean;
 
@@ -100,6 +108,11 @@ export class UserPreferencesUpdateDto {
 
   @Optional()
   @ValidateNested()
+  @Type(() => SharedLinksUpdate)
+  sharedLinks?: SharedLinksUpdate;
+
+  @Optional()
+  @ValidateNested()
   @Type(() => TagsUpdate)
   tags?: TagsUpdate;
 
@@ -122,11 +135,6 @@ export class UserPreferencesUpdateDto {
   @ValidateNested()
   @Type(() => PurchaseUpdate)
   purchase?: PurchaseUpdate;
-}
-
-class AvatarResponse {
-  @ApiProperty({ enumName: 'UserAvatarColor', enum: UserAvatarColor })
-  color!: UserAvatarColor;
 }
 
 class RatingsResponse {
@@ -152,6 +160,11 @@ class TagsResponse {
   sidebarWeb: boolean = true;
 }
 
+class SharedLinksResponse {
+  enabled: boolean = true;
+  sidebarWeb: boolean = false;
+}
+
 class EmailNotificationsResponse {
   enabled!: boolean;
   albumInvite!: boolean;
@@ -175,8 +188,8 @@ export class UserPreferencesResponseDto implements UserPreferences {
   memories!: MemoriesResponse;
   people!: PeopleResponse;
   ratings!: RatingsResponse;
+  sharedLinks!: SharedLinksResponse;
   tags!: TagsResponse;
-  avatar!: AvatarResponse;
   emailNotifications!: EmailNotificationsResponse;
   download!: DownloadResponse;
   purchase!: PurchaseResponse;

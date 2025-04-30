@@ -8,12 +8,23 @@
   import CircleIconButton from '$lib/components/elements/buttons/circle-icon-button.svelte';
   import { t } from 'svelte-i18n';
 
-  export let album: AlbumResponseDto;
-  export let showOwner = false;
-  export let showDateRange = false;
-  export let showItemCount = false;
-  export let preload = false;
-  export let onShowContextMenu: ((position: ContextMenuPosition) => unknown) | undefined = undefined;
+  interface Props {
+    album: AlbumResponseDto;
+    showOwner?: boolean;
+    showDateRange?: boolean;
+    showItemCount?: boolean;
+    preload?: boolean;
+    onShowContextMenu?: ((position: ContextMenuPosition) => unknown) | undefined;
+  }
+
+  let {
+    album,
+    showOwner = false,
+    showDateRange = false,
+    showItemCount = false,
+    preload = false,
+    onShowContextMenu = undefined,
+  }: Props = $props();
 
   const showAlbumContextMenu = (e: MouseEvent) => {
     e.stopPropagation();
@@ -29,7 +40,7 @@
   {#if onShowContextMenu}
     <div
       id="icon-{album.id}"
-      class="absolute right-6 top-6 z-10 opacity-0 group-hover:opacity-100 focus-within:opacity-100"
+      class="absolute end-6 top-6 z-10 opacity-0 group-hover:opacity-100 focus-within:opacity-100"
       data-testid="context-button-parent"
     >
       <CircleIconButton
@@ -39,7 +50,7 @@
         size="20"
         padding="2"
         class="icon-white-drop-shadow"
-        on:click={showAlbumContextMenu}
+        onclick={showAlbumContextMenu}
       />
     </div>
   {/if}

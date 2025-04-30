@@ -2,15 +2,19 @@
   import { t } from 'svelte-i18n';
   import ImmichLogo from '../immich-logo.svelte';
 
-  export let centered = false;
-  export let logoSize: 'sm' | 'lg' = 'sm';
+  interface Props {
+    centered?: boolean;
+    logoSize?: 'sm' | 'lg';
+  }
+
+  let { centered = false, logoSize = 'sm' }: Props = $props();
 </script>
 
 <div
   class="flex gap-1 mt-2 place-items-center dark:bg-immich-dark-primary/10 bg-gray-200/50 p-2 rounded-lg bg-clip-padding border border-transparent relative supporter-effect"
   class:place-content-center={centered}
 >
-  <ImmichLogo class={logoSize === 'sm' ? 'size-6' : 'size-8'} noText />
+  <ImmichLogo class={logoSize === 'sm' ? 'h-6' : 'h-8'} noText />
   <p class="dark:text-gray-100">{$t('purchase_account_info')}</p>
 </div>
 

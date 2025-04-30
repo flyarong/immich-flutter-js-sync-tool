@@ -1,8 +1,9 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
-import { AssetMapOptions, AssetResponseDto, mapAsset } from 'src/dtos/asset-response.dto';
+import { AssetMapOptions, AssetResponseDto, MapAsset, mapAsset } from 'src/dtos/asset-response.dto';
 import { AuthDto } from 'src/dtos/auth.dto';
-import { PersonResponseDto } from 'src/dtos/person.dto';
+import { mapPerson, PersonResponseDto } from 'src/dtos/person.dto';
 import {
+  mapPlaces,
   MetadataSearchDto,
   PlacesResponseDto,
   RandomSearchDto,
@@ -12,11 +13,9 @@ import {
   SearchSuggestionRequestDto,
   SearchSuggestionType,
   SmartSearchDto,
-  mapPlaces,
 } from 'src/dtos/search.dto';
-import { AssetEntity } from 'src/entities/asset.entity';
 import { AssetOrder } from 'src/enum';
-import { SearchExploreItem } from 'src/interfaces/search.interface';
+import { SearchExploreItem } from 'src/repositories/search.repository';
 import { BaseService } from 'src/services/base.service';
 import { getMyPartnerIds } from 'src/utils/asset.util';
 import { isSmartSearchEnabled } from 'src/utils/misc';
@@ -24,7 +23,8 @@ import { isSmartSearchEnabled } from 'src/utils/misc';
 @Injectable()
 export class SearchService extends BaseService {
   async searchPerson(auth: AuthDto, dto: SearchPeopleDto): Promise<PersonResponseDto[]> {
-    return this.personRepository.getByName(auth.user.id, dto.name, { withHidden: dto.withHidden });
+    const people = await this.personRepository.getByName(auth.user.id, dto.name, { withHidden: dto.withHidden });
+    return people.map((person) => mapPerson(person));
   }
 
   async searchPlaces(dto: SearchPlacesDto): Promise<PlacesResponseDto[]> {
@@ -34,18 +34,10 @@ export class SearchService extends BaseService {
 
   async getExploreData(auth: AuthDto): Promise<SearchExploreItem<AssetResponseDto>[]> {
     const options = { maxFields: 12, minAssetsPerField: 5 };
-    const results = await Promise.all([
-      this.assetRepository.getAssetIdByCity(auth.user.id, options),
-      this.assetRepository.getAssetIdByTag(auth.user.id, options),
-    ]);
-    const assetIds = new Set<string>(results.flatMap((field) => field.items.map((item) => item.data)));
-    const assets = await this.assetRepository.getByIdsWithAllRelations([...assetIds]);
-    const assetMap = new Map<string, AssetResponseDto>(assets.map((asset) => [asset.id, mapAsset(asset)]));
-
-    return results.map(({ fieldName, items }) => ({
-      fieldName,
-      items: items.map(({ value, data }) => ({ value, data: assetMap.get(data) as AssetResponseDto })),
-    }));
+    const cities = await this.assetRepository.getAssetIdByCity(auth.user.id, options);
+    const assets = await this.assetRepository.getByIdsWithAllRelationsButStacks(cities.items.map(({ data }) => data));
+    const items = assets.map((asset) => ({ value: asset.exifInfo!.city!, data: mapAsset(asset, { auth }) }));
+    return [{ fieldName: cities.fieldName, items }];
   }
 
   async searchMetadata(auth: AuthDto, dto: MetadataSearchDto): Promise<SearchResponseDto> {
@@ -59,14 +51,13 @@ export class SearchService extends BaseService {
 
     const page = dto.page ?? 1;
     const size = dto.size || 250;
-    const enumToOrder = { [AssetOrder.ASC]: 'ASC', [AssetOrder.DESC]: 'DESC' } as const;
     const { hasNextPage, items } = await this.searchRepository.searchMetadata(
       { page, size },
       {
         ...dto,
         checksum,
         userIds,
-        orderDirection: dto.order ? enumToOrder[dto.order] : 'DESC',
+        orderDirection: dto.order ?? AssetOrder.DESC,
       },
     );
 
@@ -86,12 +77,10 @@ export class SearchService extends BaseService {
     }
 
     const userIds = await this.getUserIdsToSearch(auth);
-
-    const embedding = await this.machineLearningRepository.encodeText(
-      machineLearning.url,
-      dto.query,
-      machineLearning.clip,
-    );
+    const embedding = await this.machineLearningRepository.encodeText(machineLearning.urls, dto.query, {
+      modelName: machineLearning.clip.modelName,
+      language: dto.language,
+    });
     const page = dto.page ?? 1;
     const size = dto.size || 100;
     const { hasNextPage, items } = await this.searchRepository.searchSmart(
@@ -110,29 +99,32 @@ export class SearchService extends BaseService {
 
   async getSearchSuggestions(auth: AuthDto, dto: SearchSuggestionRequestDto) {
     const userIds = await this.getUserIdsToSearch(auth);
-    const results = await this.getSuggestions(userIds, dto);
-    return results.filter((result) => (dto.includeNull ? true : result !== null));
+    const suggestions = await this.getSuggestions(userIds, dto);
+    if (dto.includeNull) {
+      suggestions.push(null);
+    }
+    return suggestions;
   }
 
-  private getSuggestions(userIds: string[], dto: SearchSuggestionRequestDto) {
+  private getSuggestions(userIds: string[], dto: SearchSuggestionRequestDto): Promise<Array<string | null>> {
     switch (dto.type) {
       case SearchSuggestionType.COUNTRY: {
         return this.searchRepository.getCountries(userIds);
       }
       case SearchSuggestionType.STATE: {
-        return this.searchRepository.getStates(userIds, dto.country);
+        return this.searchRepository.getStates(userIds, dto);
       }
       case SearchSuggestionType.CITY: {
-        return this.searchRepository.getCities(userIds, dto.country, dto.state);
+        return this.searchRepository.getCities(userIds, dto);
       }
       case SearchSuggestionType.CAMERA_MAKE: {
-        return this.searchRepository.getCameraMakes(userIds, dto.model);
+        return this.searchRepository.getCameraMakes(userIds, dto);
       }
       case SearchSuggestionType.CAMERA_MODEL: {
-        return this.searchRepository.getCameraModels(userIds, dto.make);
+        return this.searchRepository.getCameraModels(userIds, dto);
       }
       default: {
-        return [];
+        return Promise.resolve([]);
       }
     }
   }
@@ -146,7 +138,7 @@ export class SearchService extends BaseService {
     return [auth.user.id, ...partnerIds];
   }
 
-  private mapResponse(assets: AssetEntity[], nextPage: string | null, options: AssetMapOptions): SearchResponseDto {
+  private mapResponse(assets: MapAsset[], nextPage: string | null, options: AssetMapOptions): SearchResponseDto {
     return {
       albums: { total: 0, count: 0, items: [], facets: [] },
       assets: {

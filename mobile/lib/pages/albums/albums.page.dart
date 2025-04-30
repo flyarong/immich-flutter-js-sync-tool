@@ -17,6 +17,7 @@ import 'package:immich_mobile/routing/router.dart';
 import 'package:immich_mobile/widgets/album/album_thumbnail_card.dart';
 import 'package:immich_mobile/widgets/common/immich_app_bar.dart';
 import 'package:immich_mobile/widgets/common/immich_thumbnail.dart';
+import 'package:immich_mobile/widgets/common/search_field.dart';
 
 @RoutePage()
 class AlbumsPage extends HookConsumerWidget {
@@ -78,7 +79,7 @@ class AlbumsPage extends HookConsumerWidget {
         showUploadButton: false,
         actions: [
           IconButton(
-            icon: Icon(
+            icon: const Icon(
               Icons.add_rounded,
               size: 28,
             ),
@@ -106,55 +107,26 @@ class AlbumsPage extends HookConsumerWidget {
                 borderRadius: BorderRadius.circular(24),
                 gradient: LinearGradient(
                   colors: [
-                    context.colorScheme.primary.withOpacity(0.075),
-                    context.colorScheme.primary.withOpacity(0.09),
-                    context.colorScheme.primary.withOpacity(0.075),
+                    context.colorScheme.primary.withValues(alpha: 0.075),
+                    context.colorScheme.primary.withValues(alpha: 0.09),
+                    context.colorScheme.primary.withValues(alpha: 0.075),
                   ],
                   begin: Alignment.topLeft,
                   end: Alignment.bottomRight,
-                  transform: GradientRotation(0.5 * pi),
+                  transform: const GradientRotation(0.5 * pi),
                 ),
               ),
-              child: TextField(
+              child: SearchField(
                 autofocus: false,
-                decoration: InputDecoration(
-                  contentPadding: EdgeInsets.all(16),
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(25),
-                    borderSide: BorderSide(
-                      color: context.colorScheme.surfaceDim,
-                    ),
-                  ),
-                  enabledBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(25),
-                    borderSide: BorderSide(
-                      color: context.colorScheme.surfaceContainer,
-                    ),
-                  ),
-                  disabledBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(25),
-                    borderSide: BorderSide(
-                      color: context.colorScheme.surfaceDim,
-                    ),
-                  ),
-                  focusedBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(25),
-                    borderSide: BorderSide(
-                      color: context.colorScheme.primary.withAlpha(100),
-                    ),
-                  ),
-                  hintText: 'search_albums'.tr(),
-                  hintStyle: context.textTheme.bodyLarge?.copyWith(
-                    color: context.colorScheme.onSurfaceSecondary,
-                  ),
-                  prefixIcon: const Icon(Icons.search_rounded),
-                  suffixIcon: searchController.text.isNotEmpty
-                      ? IconButton(
-                          icon: const Icon(Icons.clear_rounded),
-                          onPressed: clearSearch,
-                        )
-                      : const SizedBox.shrink(),
-                ),
+                contentPadding: const EdgeInsets.all(16),
+                hintText: 'search_albums'.tr(),
+                prefixIcon: const Icon(Icons.search_rounded),
+                suffixIcon: searchController.text.isNotEmpty
+                    ? IconButton(
+                        icon: const Icon(Icons.clear_rounded),
+                        onPressed: clearSearch,
+                      )
+                    : null,
                 controller: searchController,
                 onChanged: (_) =>
                     onSearch(searchController.text, filterMode.value),
@@ -255,9 +227,13 @@ class AlbumsPage extends HookConsumerWidget {
                                 fontWeight: FontWeight.w600,
                               ),
                             ),
-                            subtitle: sorted[index].ownerId == userId
+                            subtitle: sorted[index].ownerId != null
                                 ? Text(
-                                    '${sorted[index].assetCount} items',
+                                    '${(sorted[index].assetCount == 1 ? 'album_thumbnail_card_item'.tr(
+                                        args: ['${sorted[index].assetCount}'],
+                                      ) : 'album_thumbnail_card_items'.tr(
+                                        args: ['${sorted[index].assetCount}'],
+                                      ))} • ${sorted[index].ownerId != userId ? 'album_thumbnail_shared_by'.tr(args: [sorted[index].ownerName!]) : 'owned'.tr()}',
                                     overflow: TextOverflow.ellipsis,
                                     style:
                                         context.textTheme.bodyMedium?.copyWith(
@@ -265,21 +241,7 @@ class AlbumsPage extends HookConsumerWidget {
                                           .colorScheme.onSurfaceSecondary,
                                     ),
                                   )
-                                : sorted[index].ownerName != null
-                                    ? Text(
-                                        '${sorted[index].assetCount} items • ${'album_thumbnail_shared_by'.tr(
-                                          args: [
-                                            sorted[index].ownerName!,
-                                          ],
-                                        )}',
-                                        overflow: TextOverflow.ellipsis,
-                                        style: context.textTheme.bodyMedium
-                                            ?.copyWith(
-                                          color: context
-                                              .colorScheme.onSurfaceSecondary,
-                                        ),
-                                      )
-                                    : null,
+                                : null,
                             onTap: () => context.pushRoute(
                               AlbumViewerRoute(albumId: sorted[index].id),
                             ),
@@ -362,13 +324,13 @@ class SortButton extends ConsumerWidget {
 
     return MenuAnchor(
       style: MenuStyle(
-        elevation: WidgetStatePropertyAll(1),
+        elevation: const WidgetStatePropertyAll(1),
         shape: WidgetStateProperty.all(
           RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(24),
           ),
         ),
-        padding: WidgetStatePropertyAll(
+        padding: const WidgetStatePropertyAll(
           EdgeInsets.all(4),
         ),
       ),

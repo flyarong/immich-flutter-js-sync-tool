@@ -1,33 +1,29 @@
 import { BadRequestException, ForbiddenException, Injectable, UnauthorizedException } from '@nestjs/common';
-import { isNumber, isString } from 'class-validator';
-import cookieParser from 'cookie';
+import { isString } from 'class-validator';
+import { parse } from 'cookie';
 import { DateTime } from 'luxon';
 import { IncomingHttpHeaders } from 'node:http';
+import { join } from 'node:path';
 import { LOGIN_URL, MOBILE_REDIRECT, SALT_ROUNDS } from 'src/constants';
-import { OnEvent } from 'src/decorators';
+import { StorageCore } from 'src/cores/storage.core';
+import { UserAdmin } from 'src/database';
 import {
   AuthDto,
   ChangePasswordDto,
-  ImmichCookie,
-  ImmichHeader,
-  ImmichQuery,
   LoginCredentialDto,
   LogoutResponseDto,
-  OAuthAuthorizeResponseDto,
   OAuthCallbackDto,
   OAuthConfigDto,
   SignUpDto,
   mapLoginResponse,
 } from 'src/dtos/auth.dto';
 import { UserAdminResponseDto, mapUserAdmin } from 'src/dtos/user.dto';
-import { UserEntity } from 'src/entities/user.entity';
-import { AuthType, Permission } from 'src/enum';
-import { OAuthProfile } from 'src/interfaces/oauth.interface';
+import { AuthType, ImmichCookie, ImmichHeader, ImmichQuery, JobName, Permission, StorageFolder } from 'src/enum';
+import { OAuthProfile } from 'src/repositories/oauth.repository';
 import { BaseService } from 'src/services/base.service';
 import { isGranted } from 'src/utils/access';
 import { HumanReadableSize } from 'src/utils/bytes';
-import { createUser } from 'src/utils/user';
-
+import { mimeTypes } from 'src/utils/mime-types';
 export interface LoginDetails {
   isSecure: boolean;
   clientIp: string;
@@ -54,11 +50,6 @@ export type ValidateRequest = {
 
 @Injectable()
 export class AuthService extends BaseService {
-  @OnEvent({ name: 'app.bootstrap' })
-  onBootstrap() {
-    this.oauthRepository.init();
-  }
-
   async login(dto: LoginCredentialDto, details: LoginDetails) {
     const config = await this.getConfig({ withCache: false });
     if (!config.passwordLogin.enabled) {
@@ -69,7 +60,7 @@ export class AuthService extends BaseService {
     if (user) {
       const isAuthenticated = this.validatePassword(dto.password, user);
       if (!isAuthenticated) {
-        user = null;
+        user = undefined;
       }
     }
 
@@ -118,16 +109,13 @@ export class AuthService extends BaseService {
       throw new BadRequestException('The server already has an admin');
     }
 
-    const admin = await createUser(
-      { userRepo: this.userRepository, cryptoRepo: this.cryptoRepository },
-      {
-        isAdmin: true,
-        email: dto.email,
-        name: dto.name,
-        password: dto.password,
-        storageLabel: 'admin',
-      },
-    );
+    const admin = await this.createUser({
+      isAdmin: true,
+      email: dto.email,
+      name: dto.name,
+      password: dto.password,
+      storageLabel: 'admin',
+    });
 
     return mapUserAdmin(admin);
   }
@@ -181,23 +169,38 @@ export class AuthService extends BaseService {
     return `${MOBILE_REDIRECT}?${url.split('?')[1] || ''}`;
   }
 
-  async authorize(dto: OAuthConfigDto): Promise<OAuthAuthorizeResponseDto> {
+  async authorize(dto: OAuthConfigDto) {
     const { oauth } = await this.getConfig({ withCache: false });
 
     if (!oauth.enabled) {
       throw new BadRequestException('OAuth is not enabled');
     }
 
-    const url = await this.oauthRepository.authorize(oauth, dto.redirectUri);
-    return { url };
+    return await this.oauthRepository.authorize(
+      oauth,
+      this.resolveRedirectUri(oauth, dto.redirectUri),
+      dto.state,
+      dto.codeChallenge,
+    );
   }
 
-  async callback(dto: OAuthCallbackDto, loginDetails: LoginDetails) {
+  async callback(dto: OAuthCallbackDto, headers: IncomingHttpHeaders, loginDetails: LoginDetails) {
+    const expectedState = dto.state ?? this.getCookieOauthState(headers);
+    if (!expectedState?.length) {
+      throw new BadRequestException('OAuth state is missing');
+    }
+
+    const codeVerifier = dto.codeVerifier ?? this.getCookieCodeVerifier(headers);
+    if (!codeVerifier?.length) {
+      throw new BadRequestException('OAuth code verifier is missing');
+    }
+
     const { oauth } = await this.getConfig({ withCache: false });
-    const profile = await this.oauthRepository.getProfile(oauth, dto.url, this.normalize(oauth, dto.url.split('?')[0]));
+    const url = this.resolveRedirectUri(oauth, dto.url);
+    const profile = await this.oauthRepository.getProfile(oauth, url, expectedState, codeVerifier);
     const { autoRegister, defaultStorageQuota, storageLabelClaim, storageQuotaClaim } = oauth;
     this.logger.debug(`Logging in with OAuth: ${JSON.stringify(profile)}`);
-    let user = await this.userRepository.getByOAuthId(profile.sub);
+    let user: UserAdmin | undefined = await this.userRepository.getByOAuthId(profile.sub);
 
     // link by email
     if (!user && profile.email) {
@@ -233,32 +236,62 @@ export class AuthService extends BaseService {
       const storageQuota = this.getClaim(profile, {
         key: storageQuotaClaim,
         default: defaultStorageQuota,
-        isValid: (value: unknown) => isNumber(value) && value >= 0,
+        isValid: (value: unknown) => Number(value) >= 0,
       });
 
       const userName = profile.name ?? `${profile.given_name || ''} ${profile.family_name || ''}`;
-      user = await createUser(
-        { userRepo: this.userRepository, cryptoRepo: this.cryptoRepository },
-        {
-          name: userName,
-          email: profile.email,
-          oauthId: profile.sub,
-          quotaSizeInBytes: storageQuota * HumanReadableSize.GiB || null,
-          storageLabel: storageLabel || null,
-        },
-      );
+      user = await this.createUser({
+        name: userName,
+        email: profile.email,
+        oauthId: profile.sub,
+        quotaSizeInBytes: storageQuota * HumanReadableSize.GiB || null,
+        storageLabel: storageLabel || null,
+      });
+    }
+
+    if (!user.profileImagePath && profile.picture) {
+      await this.syncProfilePicture(user, profile.picture);
     }
 
     return this.createLoginResponse(user, loginDetails);
   }
 
-  async link(auth: AuthDto, dto: OAuthCallbackDto): Promise<UserAdminResponseDto> {
+  private async syncProfilePicture(user: UserAdmin, url: string) {
+    try {
+      const oldPath = user.profileImagePath;
+
+      const { contentType, data } = await this.oauthRepository.getProfilePicture(url);
+      const extensionWithDot = mimeTypes.toExtension(contentType || 'image/jpeg') ?? 'jpg';
+      const profileImagePath = join(
+        StorageCore.getFolderLocation(StorageFolder.PROFILE, user.id),
+        `${this.cryptoRepository.randomUUID()}${extensionWithDot}`,
+      );
+
+      this.storageCore.ensureFolders(profileImagePath);
+      await this.storageRepository.createFile(profileImagePath, Buffer.from(data));
+      await this.userRepository.update(user.id, { profileImagePath, profileChangedAt: new Date() });
+
+      if (oldPath) {
+        await this.jobRepository.queue({ name: JobName.DELETE_FILES, data: { files: [oldPath] } });
+      }
+    } catch (error: Error | any) {
+      this.logger.warn(`Unable to sync oauth profile picture: ${error}`, error?.stack);
+    }
+  }
+
+  async link(auth: AuthDto, dto: OAuthCallbackDto, headers: IncomingHttpHeaders): Promise<UserAdminResponseDto> {
+    const expectedState = dto.state ?? this.getCookieOauthState(headers);
+    if (!expectedState?.length) {
+      throw new BadRequestException('OAuth state is missing');
+    }
+
+    const codeVerifier = dto.codeVerifier ?? this.getCookieCodeVerifier(headers);
+    if (!codeVerifier?.length) {
+      throw new BadRequestException('OAuth code verifier is missing');
+    }
+
     const { oauth } = await this.getConfig({ withCache: false });
-    const { sub: oauthId } = await this.oauthRepository.getProfile(
-      oauth,
-      dto.url,
-      this.normalize(oauth, dto.url.split('?')[0]),
-    );
+    const { sub: oauthId } = await this.oauthRepository.getProfile(oauth, dto.url, expectedState, codeVerifier);
     const duplicate = await this.userRepository.getByOAuthId(oauthId);
     if (duplicate && duplicate.id !== auth.user.id) {
       this.logger.warn(`OAuth link account failed: sub is already linked to another user (${duplicate.email}).`);
@@ -297,8 +330,18 @@ export class AuthService extends BaseService {
   }
 
   private getCookieToken(headers: IncomingHttpHeaders): string | null {
-    const cookies = cookieParser.parse(headers.cookie || '');
+    const cookies = parse(headers.cookie || '');
     return cookies[ImmichCookie.ACCESS_TOKEN] || null;
+  }
+
+  private getCookieOauthState(headers: IncomingHttpHeaders): string | null {
+    const cookies = parse(headers.cookie || '');
+    return cookies[ImmichCookie.OAUTH_STATE] || null;
+  }
+
+  private getCookieCodeVerifier(headers: IncomingHttpHeaders): string | null {
+    const cookies = parse(headers.cookie || '');
+    return cookies[ImmichCookie.OAUTH_CODE_VERIFIER] || null;
   }
 
   async validateSharedLink(key: string | string[]): Promise<AuthDto> {
@@ -306,26 +349,29 @@ export class AuthService extends BaseService {
 
     const bytes = Buffer.from(key, key.length === 100 ? 'hex' : 'base64url');
     const sharedLink = await this.sharedLinkRepository.getByKey(bytes);
-    if (sharedLink && (!sharedLink.expiresAt || new Date(sharedLink.expiresAt) > new Date())) {
-      const user = sharedLink.user;
-      if (user) {
-        return { user, sharedLink };
-      }
+    if (sharedLink?.user && (!sharedLink.expiresAt || new Date(sharedLink.expiresAt) > new Date())) {
+      return {
+        user: sharedLink.user,
+        sharedLink,
+      };
     }
     throw new UnauthorizedException('Invalid share key');
   }
 
   private async validateApiKey(key: string): Promise<AuthDto> {
     const hashedKey = this.cryptoRepository.hashSha256(key);
-    const apiKey = await this.keyRepository.getKey(hashedKey);
+    const apiKey = await this.apiKeyRepository.getKey(hashedKey);
     if (apiKey?.user) {
-      return { user: apiKey.user, apiKey };
+      return {
+        user: apiKey.user,
+        apiKey,
+      };
     }
 
     throw new UnauthorizedException('Invalid API key');
   }
 
-  private validatePassword(inputPassword: string, user: UserEntity): boolean {
+  private validatePassword(inputPassword: string, user: { password?: string }): boolean {
     if (!user || !user.password) {
       return false;
     }
@@ -335,30 +381,34 @@ export class AuthService extends BaseService {
   private async validateSession(tokenValue: string): Promise<AuthDto> {
     const hashedToken = this.cryptoRepository.hashSha256(tokenValue);
     const session = await this.sessionRepository.getByToken(hashedToken);
-
     if (session?.user) {
       const now = DateTime.now();
       const updatedAt = DateTime.fromJSDate(session.updatedAt);
       const diff = now.diff(updatedAt, ['hours']);
       if (diff.hours > 1) {
-        await this.sessionRepository.update({ id: session.id, updatedAt: new Date() });
+        await this.sessionRepository.update(session.id, { id: session.id, updatedAt: new Date() });
       }
 
-      return { user: session.user, session };
+      return {
+        user: session.user,
+        session: {
+          id: session.id,
+        },
+      };
     }
 
     throw new UnauthorizedException('Invalid user token');
   }
 
-  private async createLoginResponse(user: UserEntity, loginDetails: LoginDetails) {
+  private async createLoginResponse(user: UserAdmin, loginDetails: LoginDetails) {
     const key = this.cryptoRepository.newPassword(32);
     const token = this.cryptoRepository.hashSha256(key);
 
     await this.sessionRepository.create({
       token,
-      user,
       deviceOS: loginDetails.deviceOS,
       deviceType: loginDetails.deviceType,
+      userId: user.id,
     });
 
     return mapLoginResponse(user, key);
@@ -369,14 +419,13 @@ export class AuthService extends BaseService {
     return options.isValid(value) ? (value as T) : options.default;
   }
 
-  private normalize(
+  private resolveRedirectUri(
     { mobileRedirectUri, mobileOverrideEnabled }: { mobileRedirectUri: string; mobileOverrideEnabled: boolean },
-    redirectUri: string,
+    url: string,
   ) {
-    const isMobile = redirectUri.startsWith('app.immich:/');
-    if (isMobile && mobileOverrideEnabled && mobileRedirectUri) {
-      return mobileRedirectUri;
+    if (mobileOverrideEnabled && mobileRedirectUri) {
+      return url.replace(/app\.immich:\/+oauth-callback/, mobileRedirectUri);
     }
-    return redirectUri;
+    return url;
   }
 }

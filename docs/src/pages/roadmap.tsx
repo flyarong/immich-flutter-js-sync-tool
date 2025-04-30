@@ -74,12 +74,20 @@ import {
   mdiFaceRecognition,
   mdiVideo,
   mdiWeb,
+  mdiDatabaseOutline,
+  mdiLinkEdit,
+  mdiTagFaces,
+  mdiMovieOpenPlayOutline,
 } from '@mdi/js';
 import Layout from '@theme/Layout';
 import React from 'react';
 import { Item, Timeline } from '../components/timeline';
 
 const releases = {
+  'v1.130.0': new Date(2025, 2, 25),
+  'v1.127.0': new Date(2025, 1, 26),
+  'v1.122.0': new Date(2024, 11, 5),
+  'v1.120.0': new Date(2024, 10, 6),
   'v1.114.0': new Date(2024, 8, 6),
   'v1.113.0': new Date(2024, 7, 30),
   'v1.112.0': new Date(2024, 7, 14),
@@ -151,6 +159,9 @@ const weirdTags = {
   'v1.2.0': 'v0.2-dev ',
 };
 
+const title = 'Roadmap';
+const description = 'A list of future plans and goals, as well as past achievements and milestones.';
+
 const withLanguage = (date: Date) => (language: string) => date.toLocaleDateString(language);
 
 type Base = { icon: string; iconColor?: React.CSSProperties['color']; title: string; description: string };
@@ -177,43 +188,11 @@ const withRelease = ({
 const roadmap: Item[] = [
   {
     done: false,
-    icon: mdiLockOutline,
-    iconColor: 'sandybrown',
-    title: 'Private/locked photos',
-    description: 'Private assets with extra protections',
-    getDateLabel: () => 'Planned for 2024',
-  },
-  {
-    done: false,
-    icon: mdiRocketLaunch,
-    iconColor: 'indianred',
-    title: 'Stable release',
-    description: 'Immich goes stable',
-    getDateLabel: () => 'Planned for 2024',
-  },
-  {
-    done: false,
-    icon: mdiCloudUploadOutline,
-    iconColor: 'cornflowerblue',
-    title: 'Better background backups',
-    description: 'Rework background backups to be more reliable',
-    getDateLabel: () => 'Planned for 2024',
-  },
-  {
-    done: false,
-    icon: mdiImageEdit,
-    iconColor: 'rebeccapurple',
-    title: 'Basic editor',
-    description: 'Basic photo editing capabilities',
-    getDateLabel: () => 'Planned for 2024',
-  },
-  {
-    done: false,
     icon: mdiFlash,
     iconColor: 'gold',
     title: 'Workflows',
     description: 'Automate tasks with workflows',
-    getDateLabel: () => 'Planned for 2024',
+    getDateLabel: () => 'Planned for 2025',
   },
   {
     done: false,
@@ -221,7 +200,39 @@ const roadmap: Item[] = [
     iconColor: 'gray',
     title: 'Fine grained access controls',
     description: 'Granular access controls for users and api keys',
-    getDateLabel: () => 'Planned for 2024',
+    getDateLabel: () => 'Planned for 2025',
+  },
+  {
+    done: false,
+    icon: mdiImageEdit,
+    iconColor: 'rebeccapurple',
+    title: 'Basic editor',
+    description: 'Basic photo editing capabilities',
+    getDateLabel: () => 'Planned for 2025',
+  },
+  {
+    done: false,
+    icon: mdiRocketLaunch,
+    iconColor: 'indianred',
+    title: 'Stable release',
+    description: 'Immich goes stable',
+    getDateLabel: () => 'Planned for early 2025',
+  },
+  {
+    done: false,
+    icon: mdiLockOutline,
+    iconColor: 'sandybrown',
+    title: 'Private/locked photos',
+    description: 'Private assets with extra protections',
+    getDateLabel: () => 'Planned for 2025',
+  },
+  {
+    done: false,
+    icon: mdiCloudUploadOutline,
+    iconColor: 'cornflowerblue',
+    title: 'Better background backups',
+    description: 'Rework background backups to be more reliable',
+    getDateLabel: () => 'Planned for 2025',
   },
   {
     done: false,
@@ -229,11 +240,61 @@ const roadmap: Item[] = [
     iconColor: 'rebeccapurple',
     title: 'Auto stacking',
     description: 'Auto stack burst photos',
-    getDateLabel: () => 'Planned for 2024',
+    getDateLabel: () => 'Planned for 2025',
   },
 ];
 
 const milestones: Item[] = [
+  withRelease({
+    icon: mdiFolderMultiple,
+    iconColor: 'brown',
+    title: 'Folders view in the mobile app',
+    description: 'Browse your photos and videos in their folder structure inside the mobile app',
+    release: 'v1.130.0',
+  }),
+  {
+    icon: mdiStar,
+    iconColor: 'gold',
+    title: '60,000 Stars',
+    description: 'Reached 60K Stars on GitHub!',
+    getDateLabel: withLanguage(new Date(2025, 2, 4)),
+  },
+  withRelease({
+    icon: mdiTagFaces,
+    iconColor: 'teal',
+    title: 'Manual face tagging',
+    description:
+      'Manually tag or remove faces in photos and videos, even when automatic detection misses or misidentifies them.',
+    release: 'v1.127.0',
+  }),
+  withRelease({
+    icon: mdiLinkEdit,
+    iconColor: 'crimson',
+    title: 'Automatic URL switching',
+    description: 'The mobile app now supports automatic switching between different server URLs',
+    release: 'v1.122.0',
+  }),
+  withRelease({
+    icon: mdiMovieOpenPlayOutline,
+    iconColor: 'darksalmon',
+    title: 'Native video player',
+    description: 'HDR videos are now fully supported using the Immich native video player',
+    release: 'v1.122.0',
+  }),
+  withRelease({
+    icon: mdiDatabaseOutline,
+    iconColor: 'brown',
+    title: 'Automatic database dumps',
+    description: 'Database dumps are now integrated into the Immich server',
+    release: 'v1.120.0',
+  }),
+  {
+    icon: mdiStar,
+    iconColor: 'gold',
+    title: '50,000 Stars',
+    description: 'Reached 50K Stars on GitHub!',
+    getDateLabel: withLanguage(new Date(2024, 10, 1)),
+  },
   withRelease({
     icon: mdiFaceRecognition,
     title: 'Metadata Face Import',
@@ -257,7 +318,7 @@ const milestones: Item[] = [
   withRelease({
     icon: mdiFolderMultiple,
     iconColor: 'brown',
-    title: 'Folders',
+    title: 'Folders view',
     description: 'Browse your photos and videos in their folder structure',
     release: 'v1.113.0',
   }),
@@ -853,14 +914,12 @@ const milestones: Item[] = [
 
 export default function MilestonePage(): JSX.Element {
   return (
-    <Layout title="Milestones" description="History of Immich">
+    <Layout title={title} description={description}>
       <section className="my-8">
         <h1 className="md:text-6xl text-center mb-10 text-immich-primary dark:text-immich-dark-primary px-2">
-          Roadmap
+          {title}
         </h1>
-        <p className="text-center text-xl px-2">
-          A list of future plans and goals, as well as past achievements and milestones.
-        </p>
+        <p className="text-center text-xl px-2">{description}</p>
         <div className="flex justify-around mt-8 w-full max-w-full">
           <Timeline items={[...roadmap, ...milestones]} />
         </div>

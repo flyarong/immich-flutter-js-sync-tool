@@ -3,15 +3,19 @@
   import { getPartners, PartnerDirection, searchUsers, type UserResponseDto } from '@immich/sdk';
   import { onMount } from 'svelte';
   import { t } from 'svelte-i18n';
-  import Button from '../elements/buttons/button.svelte';
   import UserAvatar from '../shared-components/user-avatar.svelte';
+  import { Button } from '@immich/ui';
 
-  export let user: UserResponseDto;
-  export let onClose: () => void;
-  export let onAddUsers: (users: UserResponseDto[]) => void;
+  interface Props {
+    user: UserResponseDto;
+    onClose: () => void;
+    onAddUsers: (users: UserResponseDto[]) => void;
+  }
 
-  let availableUsers: UserResponseDto[] = [];
-  let selectedUsers: UserResponseDto[] = [];
+  let { user, onClose, onAddUsers }: Props = $props();
+
+  let availableUsers: UserResponseDto[] = $state([]);
+  let selectedUsers: UserResponseDto[] = $state([]);
 
   onMount(async () => {
     let users = await searchUsers();
@@ -35,10 +39,10 @@
 <FullScreenModal title={$t('add_partner')} showLogo {onClose}>
   <div class="immich-scrollbar max-h-[300px] overflow-y-auto">
     {#if availableUsers.length > 0}
-      {#each availableUsers as user}
+      {#each availableUsers as user (user.id)}
         <button
           type="button"
-          on:click={() => selectUser(user)}
+          onclick={() => selectUser(user)}
           class="flex w-full place-items-center gap-4 px-5 py-4 transition-all hover:bg-gray-200 dark:hover:bg-gray-700 rounded-xl"
         >
           {#if selectedUsers.includes(user)}
@@ -50,7 +54,7 @@
             <UserAvatar {user} size="lg" />
           {/if}
 
-          <div class="text-left">
+          <div class="text-start">
             <p class="text-immich-fg dark:text-immich-dark-fg">
               {user.name}
             </p>
@@ -68,7 +72,7 @@
 
     {#if selectedUsers.length > 0}
       <div class="pt-5">
-        <Button size="sm" fullwidth on:click={() => onAddUsers(selectedUsers)}>{$t('add')}</Button>
+        <Button shape="round" fullWidth onclick={() => onAddUsers(selectedUsers)}>{$t('add')}</Button>
       </div>
     {/if}
   </div>

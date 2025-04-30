@@ -1,19 +1,22 @@
 import { goto } from '$app/navigation';
 import FormatBoldMessage from '$lib/components/i18n/format-bold-message.svelte';
+import type { InterpolationValues } from '$lib/components/i18n/format-message';
 import { NotificationType, notificationController } from '$lib/components/shared-components/notification/notification';
 import { AppRoute } from '$lib/constants';
-import type { AssetInteractionStore } from '$lib/stores/asset-interaction.store';
-import { assetViewingStore } from '$lib/stores/asset-viewing.store';
-import { isSelectingAllAssets, type AssetStore } from '$lib/stores/assets.store';
-import { downloadManager } from '$lib/stores/download';
+import { authManager } from '$lib/managers/auth-manager.svelte';
+import { downloadManager } from '$lib/managers/download-manager.svelte';
+import type { AssetInteraction } from '$lib/stores/asset-interaction.svelte';
+import { assetsSnapshot, isSelectingAllAssets, type AssetStore } from '$lib/stores/assets-store.svelte';
 import { preferences } from '$lib/stores/user.store';
-import { downloadRequest, getKey, withError } from '$lib/utils';
+import { downloadRequest, withError } from '$lib/utils';
 import { createAlbum } from '$lib/utils/album-utils';
 import { getByteUnitString } from '$lib/utils/byte-units';
 import { getFormatter } from '$lib/utils/i18n';
+import { navigate } from '$lib/utils/navigation';
 import {
   addAssetsToAlbum as addAssets,
   createStack,
+  deleteAssets,
   deleteStacks,
   getAssetInfo,
   getBaseUrl,
@@ -27,11 +30,12 @@ import {
   type AssetResponseDto,
   type AssetTypeEnum,
   type DownloadInfoDto,
+  type StackResponseDto,
   type UserPreferencesResponseDto,
   type UserResponseDto,
 } from '@immich/sdk';
 import { DateTime } from 'luxon';
-import { t } from 'svelte-i18n';
+import { t, type Translations } from 'svelte-i18n';
 import { get } from 'svelte/store';
 import { handleError } from './handle-error';
 
@@ -41,7 +45,7 @@ export const addAssetsToAlbum = async (albumId: string, assetIds: string[], show
     bulkIdsDto: {
       ids: assetIds,
     },
-    key: getKey(),
+    key: authManager.key,
   });
   const count = result.filter(({ success }) => success).length;
   const $t = get(t);
@@ -118,7 +122,8 @@ export const addAssetsToNewAlbum = async (albumName: string, assetIds: string[])
     return;
   }
   const $t = get(t);
-  notificationController.show({
+  // for reasons beyond me <ComponentProps<typeof FormatBoldMessage>> doesn't work, even though it's (afaik) exactly this object
+  notificationController.show<{ key: Translations; values: InterpolationValues }>({
     type: NotificationType.Info,
     timeout: 5000,
     component: {
@@ -158,11 +163,23 @@ export const downloadBlob = (data: Blob, filename: string) => {
   URL.revokeObjectURL(url);
 };
 
+export const downloadUrl = (url: string, filename: string) => {
+  const anchor = document.createElement('a');
+  anchor.href = url;
+  anchor.download = filename;
+
+  document.body.append(anchor);
+  anchor.click();
+  anchor.remove();
+
+  URL.revokeObjectURL(url);
+};
+
 export const downloadArchive = async (fileName: string, options: Omit<DownloadInfoDto, 'archiveSize'>) => {
   const $preferences = get<UserPreferencesResponseDto | undefined>(preferences);
   const dto = { ...options, archiveSize: $preferences?.download.archiveSize };
 
-  const [error, downloadInfo] = await withError(() => getDownloadInfo({ downloadInfoDto: dto, key: getKey() }));
+  const [error, downloadInfo] = await withError(() => getDownloadInfo({ downloadInfoDto: dto, key: authManager.key }));
   if (error) {
     const $t = get(t);
     handleError(error, $t('errors.unable_to_download_files'));
@@ -177,7 +194,7 @@ export const downloadArchive = async (fileName: string, options: Omit<DownloadIn
     const archive = downloadInfo.archives[index];
     const suffix = downloadInfo.archives.length > 1 ? `+${index + 1}` : '';
     const archiveName = fileName.replace('.zip', `${suffix}-${DateTime.now().toFormat('yyyyLLdd_HHmmss')}.zip`);
-    const key = getKey();
+    const key = authManager.key;
 
     let downloadKey = `${archiveName} `;
     if (downloadInfo.archives.length > 1) {
@@ -224,8 +241,8 @@ export const downloadFile = async (asset: AssetResponseDto) => {
   };
 
   if (asset.livePhotoVideoId) {
-    const motionAsset = await getAssetInfo({ id: asset.livePhotoVideoId, key: getKey() });
-    if (!isAndroidMotionVideo(motionAsset) || get(preferences).download.includeEmbeddedVideos) {
+    const motionAsset = await getAssetInfo({ id: asset.livePhotoVideoId, key: authManager.key });
+    if (!isAndroidMotionVideo(motionAsset) || get(preferences)?.download.includeEmbeddedVideos) {
       assets.push({
         filename: motionAsset.originalFileName,
         id: asset.livePhotoVideoId,
@@ -234,33 +251,18 @@ export const downloadFile = async (asset: AssetResponseDto) => {
     }
   }
 
-  for (const { filename, id, size } of assets) {
-    const downloadKey = filename;
-
+  for (const { filename, id } of assets) {
     try {
-      const abort = new AbortController();
-      downloadManager.add(downloadKey, size, abort);
-      const key = getKey();
+      const key = authManager.key;
 
       notificationController.show({
         type: NotificationType.Info,
         message: $t('downloading_asset_filename', { values: { filename: asset.originalFileName } }),
       });
 
-      // TODO use sdk once it supports progress events
-      const { data } = await downloadRequest({
-        method: 'GET',
-        url: getBaseUrl() + `/assets/${id}/original` + (key ? `?key=${key}` : ''),
-        signal: abort.signal,
-        onDownloadProgress: (event) => downloadManager.update(downloadKey, event.loaded, event.total),
-      });
-
-      downloadBlob(data, filename);
+      downloadUrl(getBaseUrl() + `/assets/${id}/original` + (key ? `?key=${key}` : ''), filename);
     } catch (error) {
       handleError(error, $t('errors.error_downloading', { values: { filename } }));
-      downloadManager.clear(downloadKey);
-    } finally {
-      setTimeout(() => downloadManager.clear(downloadKey), 5000);
     }
   }
 };
@@ -363,7 +365,7 @@ export const getAssetType = (type: AssetTypeEnum) => {
   }
 };
 
-export const getSelectedAssets = (assets: Set<AssetResponseDto>, user: UserResponseDto | null): string[] => {
+export const getSelectedAssets = (assets: AssetResponseDto[], user: UserResponseDto | null): string[] => {
   const ids = [...assets].filter((a) => user && a.ownerId === user.id).map((a) => a.id);
 
   const numberOfIssues = [...assets].filter((a) => user && a.ownerId !== user.id).length;
@@ -377,9 +379,14 @@ export const getSelectedAssets = (assets: Set<AssetResponseDto>, user: UserRespo
   return ids;
 };
 
-export const stackAssets = async (assets: AssetResponseDto[], showNotification = true) => {
+export type StackResponse = {
+  stack?: StackResponseDto;
+  toDeleteIds: string[];
+};
+
+export const stackAssets = async (assets: AssetResponseDto[], showNotification = true): Promise<StackResponse> => {
   if (assets.length < 2) {
-    return false;
+    return { stack: undefined, toDeleteIds: [] };
   }
 
   const $t = get(t);
@@ -392,7 +399,7 @@ export const stackAssets = async (assets: AssetResponseDto[], showNotification =
         type: NotificationType.Info,
         button: {
           text: $t('view_stack'),
-          onClick: () => assetViewingStore.setAssetId(stack.primaryAssetId),
+          onClick: () => navigate({ targetRoute: 'current', assetId: stack.primaryAssetId }),
         },
       });
     }
@@ -401,10 +408,13 @@ export const stackAssets = async (assets: AssetResponseDto[], showNotification =
       asset.stack = index === 0 ? { id: stack.id, assetCount: stack.assets.length, primaryAssetId: asset.id } : null;
     }
 
-    return assets.slice(1).map((asset) => asset.id);
+    return {
+      stack,
+      toDeleteIds: assets.slice(1).map((asset) => asset.id),
+    };
   } catch (error) {
     handleError(error, $t('errors.failed_to_stack_assets'));
-    return false;
+    return { stack: undefined, toDeleteIds: [] };
   }
 };
 
@@ -438,7 +448,27 @@ export const deleteStack = async (stackIds: string[]) => {
   }
 };
 
-export const selectAllAssets = async (assetStore: AssetStore, assetInteractionStore: AssetInteractionStore) => {
+export const keepThisDeleteOthers = async (keepAsset: AssetResponseDto, stack: StackResponseDto) => {
+  const $t = get(t);
+
+  try {
+    const assetsToDeleteIds = stack.assets.filter((asset) => asset.id !== keepAsset.id).map((asset) => asset.id);
+    await deleteAssets({ assetBulkDeleteDto: { ids: assetsToDeleteIds } });
+    await deleteStacks({ bulkIdsDto: { ids: [stack.id] } });
+
+    notificationController.show({
+      type: NotificationType.Info,
+      message: $t('kept_this_deleted_others', { values: { count: assetsToDeleteIds.length } }),
+    });
+
+    keepAsset.stack = null;
+    return keepAsset;
+  } catch (error) {
+    handleError(error, $t('errors.failed_to_keep_this_delete_others'));
+  }
+};
+
+export const selectAllAssets = async (assetStore: AssetStore, assetInteraction: AssetInteraction) => {
   if (get(isSelectingAllAssets)) {
     // Selection is already ongoing
     return;
@@ -450,21 +480,25 @@ export const selectAllAssets = async (assetStore: AssetStore, assetInteractionSt
       await assetStore.loadBucket(bucket.bucketDate);
 
       if (!get(isSelectingAllAssets)) {
+        assetInteraction.clearMultiselect();
         break; // Cancelled
       }
-      assetInteractionStore.selectAssets(bucket.assets);
+      assetInteraction.selectAssets(assetsSnapshot(bucket.getAssets()));
 
-      // We use setTimeout to allow the UI to update. Otherwise, this may
-      // cause a long delay between the start of 'select all' and the
-      // effective update of the UI, depending on the number of assets
-      // to select
-      await delay(0);
+      for (const dateGroup of bucket.dateGroups) {
+        assetInteraction.addGroupToMultiselectGroup(dateGroup.groupTitle);
+      }
     }
   } catch (error) {
     const $t = get(t);
     handleError(error, $t('errors.error_selecting_all_assets'));
     isSelectingAllAssets.set(false);
   }
+};
+
+export const cancelMultiselect = (assetInteraction: AssetInteraction) => {
+  isSelectingAllAssets.set(false);
+  assetInteraction.clearMultiselect();
 };
 
 export const toggleArchive = async (asset: AssetResponseDto) => {
@@ -522,7 +556,7 @@ export const delay = async (ms: number) => {
 };
 
 export const canCopyImageToClipboard = (): boolean => {
-  return !!(navigator.clipboard && window.ClipboardItem);
+  return !!(navigator.clipboard && globalThis.ClipboardItem);
 };
 
 const imgToBlob = async (imageElement: HTMLImageElement) => {

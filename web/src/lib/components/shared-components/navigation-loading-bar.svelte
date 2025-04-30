@@ -3,7 +3,7 @@
   import { cubicOut } from 'svelte/easing';
   import { tweened } from 'svelte/motion';
 
-  let showing = false;
+  let showing = $state(false);
 
   // delay showing any progress for a little bit so very fast loads
   // do not cause flicker
@@ -26,7 +26,7 @@
 </script>
 
 {#if showing}
-  <div class="absolute left-0 top-0 z-[999999999] h-[3px] w-screen bg-white">
-    <span class="absolute h-[3px] bg-immich-primary" style:width={`${$progress}%`} />
+  <div class="absolute start-0 top-0 z-[999999999] h-[3px] w-dvw bg-white">
+    <span class="absolute h-[3px] bg-immich-primary" style:width={`${$progress}%`}></span>
   </div>
 {/if}

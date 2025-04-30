@@ -1,12 +1,16 @@
 <script lang="ts">
-  import Button from '$lib/components/elements/buttons/button.svelte';
   import type { ResetOptions } from '$lib/utils/dipatch';
+  import { Button } from '@immich/ui';
   import { t } from 'svelte-i18n';
 
-  export let showResetToDefault = true;
-  export let disabled = false;
-  export let onReset: (options: ResetOptions) => void;
-  export let onSave: () => void;
+  interface Props {
+    showResetToDefault?: boolean;
+    disabled?: boolean;
+    onReset: (options: ResetOptions) => void;
+    onSave: () => void;
+  }
+
+  let { showResetToDefault = true, disabled = false, onReset, onSave }: Props = $props();
 </script>
 
 <div class="mt-8 flex justify-between gap-2">
@@ -14,7 +18,7 @@
     {#if showResetToDefault}
       <button
         type="button"
-        on:click={() => onReset({ default: true })}
+        onclick={() => onReset({ default: true })}
         class="bg-none text-sm font-medium text-immich-primary hover:text-immich-primary/75 dark:text-immich-dark-primary hover:dark:text-immich-dark-primary/75"
       >
         {$t('reset_to_default')}
@@ -22,8 +26,10 @@
     {/if}
   </div>
 
-  <div class="right">
-    <Button {disabled} size="sm" color="gray" on:click={() => onReset({ default: false })}>{$t('reset')}</Button>
-    <Button type="submit" {disabled} size="sm" on:click={() => onSave()}>{$t('save')}</Button>
+  <div class="flex gap-1">
+    <Button shape="round" {disabled} size="small" color="secondary" onclick={() => onReset({ default: false })}
+      >{$t('reset')}</Button
+    >
+    <Button shape="round" type="submit" {disabled} size="small" onclick={() => onSave()}>{$t('save')}</Button>
   </div>
 </div>

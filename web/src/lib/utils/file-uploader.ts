@@ -1,6 +1,7 @@
+import { authManager } from '$lib/managers/auth-manager.svelte';
 import { UploadState } from '$lib/models/upload-asset';
 import { uploadAssetsStore } from '$lib/stores/upload';
-import { getKey, uploadRequest } from '$lib/utils';
+import { uploadRequest } from '$lib/utils';
 import { addAssetsToAlbum } from '$lib/utils/asset-utils';
 import { ExecutorQueue } from '$lib/utils/executor-queue';
 import {
@@ -83,14 +84,19 @@ export const openFileUploadDialog = async (options: FileUploadParam = {}) => {
   });
 };
 
-export const fileUploadHandler = async (files: File[], albumId?: string, assetId?: string): Promise<string[]> => {
+export const fileUploadHandler = async (
+  files: File[],
+  albumId?: string,
+  replaceAssetId?: string,
+): Promise<string[]> => {
   const extensions = await getExtensions();
   const promises = [];
   for (const file of files) {
     const name = file.name.toLowerCase();
     if (extensions.some((extension) => name.endsWith(extension))) {
-      uploadAssetsStore.addItem({ id: getDeviceAssetId(file), file, albumId });
-      promises.push(uploadExecutionQueue.addTask(() => fileUploader(file, albumId, assetId)));
+      const deviceAssetId = getDeviceAssetId(file);
+      uploadAssetsStore.addItem({ id: deviceAssetId, file, albumId });
+      promises.push(uploadExecutionQueue.addTask(() => fileUploader(file, deviceAssetId, albumId, replaceAssetId)));
     }
   }
 
@@ -103,9 +109,13 @@ function getDeviceAssetId(asset: File) {
 }
 
 // TODO: should probably use the @api SDK
-async function fileUploader(assetFile: File, albumId?: string, replaceAssetId?: string): Promise<string | undefined> {
+async function fileUploader(
+  assetFile: File,
+  deviceAssetId: string,
+  albumId?: string,
+  replaceAssetId?: string,
+): Promise<string | undefined> {
   const fileCreatedAt = new Date(assetFile.lastModified).toISOString();
-  const deviceAssetId = getDeviceAssetId(assetFile);
   const $t = get(t);
 
   uploadAssetsStore.markStarted(deviceAssetId);
@@ -125,7 +135,7 @@ async function fileUploader(assetFile: File, albumId?: string, replaceAssetId?: 
     }
 
     let responseData: { id: string; status: AssetMediaStatus; isTrashed?: boolean } | undefined;
-    const key = getKey();
+    const key = authManager.key;
     if (crypto?.subtle?.digest && !key) {
       uploadAssetsStore.updateItem(deviceAssetId, { message: $t('asset_hashing') });
       await tick();

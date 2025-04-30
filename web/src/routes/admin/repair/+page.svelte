@@ -1,25 +1,28 @@
 <script lang="ts">
   import empty4Url from '$lib/assets/empty-4.svg';
   import CircleIconButton from '$lib/components/elements/buttons/circle-icon-button.svelte';
-  import LinkButton from '$lib/components/elements/buttons/link-button.svelte';
-  import Icon from '$lib/components/elements/icon.svelte';
   import UserPageLayout from '$lib/components/layouts/user-page-layout.svelte';
   import EmptyPlaceholder from '$lib/components/shared-components/empty-placeholder.svelte';
   import {
     NotificationType,
     notificationController,
   } from '$lib/components/shared-components/notification/notification';
-  import { downloadManager } from '$lib/stores/download';
+  import { downloadManager } from '$lib/managers/download-manager.svelte';
+  import { locale } from '$lib/stores/preferences.store';
   import { copyToClipboard } from '$lib/utils';
   import { downloadBlob } from '$lib/utils/asset-utils';
   import { handleError } from '$lib/utils/handle-error';
   import { fixAuditFiles, getAuditFiles, getFileChecksums, type FileReportItemDto } from '@immich/sdk';
+  import { Button, HStack, Text } from '@immich/ui';
   import { mdiCheckAll, mdiContentCopy, mdiDownload, mdiRefresh, mdiWrench } from '@mdi/js';
-  import type { PageData } from './$types';
   import { t } from 'svelte-i18n';
-  import { locale } from '$lib/stores/preferences.store';
+  import type { PageData } from './$types';
 
-  export let data: PageData;
+  interface Props {
+    data: PageData;
+  }
+
+  let { data }: Props = $props();
 
   interface UntrackedFile {
     filename: string;
@@ -33,12 +36,12 @@
 
   const normalize = (filenames: string[]) => filenames.map((filename) => ({ filename, checksum: null }));
 
-  let checking = false;
-  let repairing = false;
+  let checking = $state(false);
+  let repairing = $state(false);
 
-  let orphans: FileReportItemDto[] = data.orphans;
-  let extras: UntrackedFile[] = normalize(data.extras);
-  let matches: Match[] = [];
+  let orphans: FileReportItemDto[] = $state(data.orphans);
+  let extras: UntrackedFile[] = $state(normalize(data.extras));
+  let matches: Match[] = $state([]);
 
   const handleDownload = () => {
     if (extras.length > 0) {
@@ -180,33 +183,43 @@
 </script>
 
 <UserPageLayout title={data.meta.title} admin>
-  <svelte:fragment slot="sidebar" />
-  <div class="flex justify-end gap-2" slot="buttons">
-    <LinkButton on:click={() => handleRepair()} disabled={matches.length === 0 || repairing}>
-      <div class="flex place-items-center gap-2 text-sm">
-        <Icon path={mdiWrench} size="18" />
-        {$t('admin.repair_all')}
-      </div>
-    </LinkButton>
-    <LinkButton on:click={() => handleCheckAll()} disabled={extras.length === 0 || checking}>
-      <div class="flex place-items-center gap-2 text-sm">
-        <Icon path={mdiCheckAll} size="18" />
-        {$t('admin.check_all')}
-      </div>
-    </LinkButton>
-    <LinkButton on:click={() => handleDownload()} disabled={extras.length + orphans.length === 0}>
-      <div class="flex place-items-center gap-2 text-sm">
-        <Icon path={mdiDownload} size="18" />
-        {$t('export')}
-      </div>
-    </LinkButton>
-    <LinkButton on:click={() => handleRefresh()}>
-      <div class="flex place-items-center gap-2 text-sm">
-        <Icon path={mdiRefresh} size="18" />
-        {$t('refresh')}
-      </div>
-    </LinkButton>
-  </div>
+  {#snippet buttons()}
+    <HStack gap={0}>
+      <Button
+        leadingIcon={mdiWrench}
+        onclick={() => handleRepair()}
+        disabled={matches.length === 0 || repairing}
+        size="small"
+        variant="ghost"
+        color="secondary"
+      >
+        <Text class="hidden md:block">{$t('admin.repair_all')}</Text>
+      </Button>
+      <Button
+        leadingIcon={mdiCheckAll}
+        onclick={() => handleCheckAll()}
+        disabled={extras.length === 0 || checking}
+        size="small"
+        variant="ghost"
+        color="secondary"
+      >
+        <Text class="hidden md:block">{$t('admin.check_all')}</Text>
+      </Button>
+      <Button
+        leadingIcon={mdiDownload}
+        onclick={() => handleDownload()}
+        disabled={extras.length + orphans.length === 0}
+        size="small"
+        variant="ghost"
+        color="secondary"
+      >
+        <Text class="hidden md:block">{$t('export')}</Text>
+      </Button>
+      <Button leadingIcon={mdiRefresh} onclick={() => handleRefresh()} size="small" variant="ghost" color="secondary">
+        <Text class="hidden md:block">{$t('refresh')}</Text>
+      </Button>
+    </HStack>
+  {/snippet}
   <section id="setting-content" class="flex place-content-center sm:mx-4">
     <section class="w-full pb-28 sm:w-5/6 md:w-[850px]">
       {#if matches.length + extras.length + orphans.length === 0}
@@ -215,7 +228,7 @@
         </div>
       {:else}
         <div class="gap-2">
-          <table class="table-fixed mt-5 w-full text-left">
+          <table class="table-fixed mt-5 w-full text-start">
             <thead
               class="mb-4 flex w-full rounded-md border bg-gray-50 text-immich-primary dark:border-immich-dark-gray dark:bg-immich-dark-gray dark:text-immich-dark-primary"
             >
@@ -238,7 +251,7 @@
                 <tr
                   class="w-full h-[75px] place-items-center border-[3px] border-transparent p-2 odd:bg-immich-gray even:bg-immich-bg hover:cursor-pointer hover:border-immich-primary/75 odd:dark:bg-immich-dark-gray/75 even:dark:bg-immich-dark-gray/50 dark:hover:border-immich-dark-primary/75 md:p-5 flex justify-between"
                   tabindex="0"
-                  on:click={() => handleSplit(match)}
+                  onclick={() => handleSplit(match)}
                 >
                   <td class="text-sm text-ellipsis flex flex-col gap-1 font-mono">
                     <span>{match.orphan.pathValue} =></span>
@@ -252,7 +265,7 @@
             </tbody>
           </table>
 
-          <table class="table-fixed mt-5 w-full text-left">
+          <table class="table-fixed mt-5 w-full text-start">
             <thead
               class="mb-4 flex w-full rounded-md border bg-gray-50 text-immich-primary dark:border-immich-dark-gray dark:bg-immich-dark-gray dark:text-immich-dark-primary"
             >
@@ -279,10 +292,10 @@
                   tabindex="0"
                   title={orphan.pathValue}
                 >
-                  <td on:click={() => copyToClipboard(orphan.pathValue)}>
-                    <CircleIconButton title={$t('copy_file_path')} icon={mdiContentCopy} size="18" />
+                  <td onclick={() => copyToClipboard(orphan.pathValue)}>
+                    <CircleIconButton title={$t('copy_file_path')} icon={mdiContentCopy} size="18" onclick={() => {}} />
                   </td>
-                  <td class="truncate text-sm font-mono text-left" title={orphan.pathValue}>
+                  <td class="truncate text-sm font-mono text-start" title={orphan.pathValue}>
                     {orphan.pathValue}
                   </td>
                   <td class="text-sm font-mono">
@@ -293,7 +306,7 @@
             </tbody>
           </table>
 
-          <table class="table-fixed mt-5 w-full text-left max-h-[300px]">
+          <table class="table-fixed mt-5 w-full text-start max-h-[300px]">
             <thead
               class="mb-4 flex w-full rounded-md border bg-gray-50 text-immich-primary dark:border-immich-dark-gray dark:bg-immich-dark-gray dark:text-immich-dark-primary"
             >
@@ -318,17 +331,17 @@
                 <tr
                   class="flex h-[50px] w-full place-items-center border-[3px] border-transparent p-1 odd:bg-immich-gray even:bg-immich-bg hover:cursor-pointer hover:border-immich-primary/75 odd:dark:bg-immich-dark-gray/75 even:dark:bg-immich-dark-gray/50 dark:hover:border-immich-dark-primary/75 md:p-5 justify-between"
                   tabindex="0"
-                  on:click={() => handleCheckOne(extra.filename)}
+                  onclick={() => handleCheckOne(extra.filename)}
                   title={extra.filename}
                 >
-                  <td on:click={() => copyToClipboard(extra.filename)}>
-                    <CircleIconButton title={$t('copy_file_path')} icon={mdiContentCopy} size="18" />
+                  <td onclick={() => copyToClipboard(extra.filename)}>
+                    <CircleIconButton title={$t('copy_file_path')} icon={mdiContentCopy} size="18" onclick={() => {}} />
                   </td>
-                  <td class="w-full text-md text-ellipsis flex justify-between pr-5">
-                    <span class="text-ellipsis grow truncate font-mono text-sm pr-5" title={extra.filename}
+                  <td class="w-full text-md text-ellipsis flex justify-between pe-5">
+                    <span class="text-ellipsis grow truncate font-mono text-sm pe-5" title={extra.filename}
                       >{extra.filename}</span
                     >
-                    <span class="text-sm font-mono dark:text-immich-dark-primary text-immich-primary pr-5">
+                    <span class="text-sm font-mono dark:text-immich-dark-primary text-immich-primary pes-5">
                       {#if extra.checksum}
                         [sha1:{extra.checksum}]
                       {/if}

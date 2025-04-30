@@ -1,169 +1,276 @@
 import { Injectable } from '@nestjs/common';
-import { InjectRepository } from '@nestjs/typeorm';
+import { ExpressionBuilder, Insertable, Kysely, sql, Updateable } from 'kysely';
+import { jsonArrayFrom } from 'kysely/helpers/postgres';
+import { DateTime } from 'luxon';
+import { InjectKysely } from 'nestjs-kysely';
+import { columns } from 'src/database';
+import { DB, UserMetadata as DbUserMetadata } from 'src/db';
 import { DummyValue, GenerateSql } from 'src/decorators';
-import { AssetEntity } from 'src/entities/asset.entity';
-import { UserMetadata, UserMetadataEntity } from 'src/entities/user-metadata.entity';
-import { UserEntity } from 'src/entities/user.entity';
-import {
-  IUserRepository,
-  UserFindOptions,
-  UserListFilter,
-  UserStatsQueryResponse,
-} from 'src/interfaces/user.interface';
-import { Instrumentation } from 'src/utils/instrumentation';
-import { IsNull, Not, Repository } from 'typeorm';
+import { AssetType, UserStatus } from 'src/enum';
+import { UserTable } from 'src/schema/tables/user.table';
+import { UserMetadata, UserMetadataItem } from 'src/types';
+import { asUuid } from 'src/utils/database';
 
-@Instrumentation()
+type Upsert = Insertable<DbUserMetadata>;
+
+export interface UserListFilter {
+  withDeleted?: boolean;
+}
+
+export interface UserStatsQueryResponse {
+  userId: string;
+  userName: string;
+  photos: number;
+  videos: number;
+  usage: number;
+  usagePhotos: number;
+  usageVideos: number;
+  quotaSizeInBytes: number | null;
+}
+
+export interface UserFindOptions {
+  withDeleted?: boolean;
+}
+
+const withMetadata = (eb: ExpressionBuilder<DB, 'users'>) => {
+  return jsonArrayFrom(
+    eb
+      .selectFrom('user_metadata')
+      .select(['user_metadata.key', 'user_metadata.value'])
+      .whereRef('users.id', '=', 'user_metadata.userId'),
+  ).as('metadata');
+};
+
 @Injectable()
-export class UserRepository implements IUserRepository {
-  constructor(
-    @InjectRepository(AssetEntity) private assetRepository: Repository<AssetEntity>,
-    @InjectRepository(UserEntity) private userRepository: Repository<UserEntity>,
-    @InjectRepository(UserMetadataEntity) private metadataRepository: Repository<UserMetadataEntity>,
-  ) {}
+export class UserRepository {
+  constructor(@InjectKysely() private db: Kysely<DB>) {}
 
-  async get(userId: string, options: UserFindOptions): Promise<UserEntity | null> {
+  @GenerateSql({ params: [DummyValue.UUID, DummyValue.BOOLEAN] })
+  get(userId: string, options: UserFindOptions) {
     options = options || {};
-    return this.userRepository.findOne({
-      where: { id: userId },
-      withDeleted: options.withDeleted,
-      relations: {
-        metadata: true,
-      },
-    });
+
+    return this.db
+      .selectFrom('users')
+      .select(columns.userAdmin)
+      .select(withMetadata)
+      .where('users.id', '=', userId)
+      .$if(!options.withDeleted, (eb) => eb.where('users.deletedAt', 'is', null))
+      .executeTakeFirst();
+  }
+
+  getMetadata(userId: string) {
+    return this.db
+      .selectFrom('user_metadata')
+      .select(['key', 'value'])
+      .where('user_metadata.userId', '=', userId)
+      .execute() as Promise<UserMetadataItem[]>;
   }
 
   @GenerateSql()
-  async getAdmin(): Promise<UserEntity | null> {
-    return this.userRepository.findOne({ where: { isAdmin: true } });
+  getAdmin() {
+    return this.db
+      .selectFrom('users')
+      .select(columns.userAdmin)
+      .select(withMetadata)
+      .where('users.isAdmin', '=', true)
+      .where('users.deletedAt', 'is', null)
+      .executeTakeFirst();
   }
 
   @GenerateSql()
   async hasAdmin(): Promise<boolean> {
-    return this.userRepository.exists({ where: { isAdmin: true } });
+    const admin = await this.db
+      .selectFrom('users')
+      .select('users.id')
+      .where('users.isAdmin', '=', true)
+      .where('users.deletedAt', 'is', null)
+      .executeTakeFirst();
+
+    return !!admin;
   }
 
   @GenerateSql({ params: [DummyValue.EMAIL] })
-  async getByEmail(email: string, withPassword?: boolean): Promise<UserEntity | null> {
-    const builder = this.userRepository.createQueryBuilder('user').where({ email });
-
-    if (withPassword) {
-      builder.addSelect('user.password');
-    }
-
-    return builder.getOne();
+  getByEmail(email: string, withPassword?: boolean) {
+    return this.db
+      .selectFrom('users')
+      .select(columns.userAdmin)
+      .select(withMetadata)
+      .$if(!!withPassword, (eb) => eb.select('password'))
+      .where('email', '=', email)
+      .where('users.deletedAt', 'is', null)
+      .executeTakeFirst();
   }
 
   @GenerateSql({ params: [DummyValue.STRING] })
-  async getByStorageLabel(storageLabel: string): Promise<UserEntity | null> {
-    return this.userRepository.findOne({ where: { storageLabel } });
+  getByStorageLabel(storageLabel: string) {
+    return this.db
+      .selectFrom('users')
+      .select(columns.userAdmin)
+      .where('users.storageLabel', '=', storageLabel)
+      .where('users.deletedAt', 'is', null)
+      .executeTakeFirst();
   }
 
   @GenerateSql({ params: [DummyValue.STRING] })
-  async getByOAuthId(oauthId: string): Promise<UserEntity | null> {
-    return this.userRepository.findOne({ where: { oauthId } });
+  getByOAuthId(oauthId: string) {
+    return this.db
+      .selectFrom('users')
+      .select(columns.userAdmin)
+      .select(withMetadata)
+      .where('users.oauthId', '=', oauthId)
+      .where('users.deletedAt', 'is', null)
+      .executeTakeFirst();
   }
 
-  async getDeletedUsers(): Promise<UserEntity[]> {
-    return this.userRepository.find({ withDeleted: true, where: { deletedAt: Not(IsNull()) } });
+  @GenerateSql({ params: [DateTime.now().minus({ years: 1 })] })
+  getDeletedAfter(target: DateTime) {
+    return this.db.selectFrom('users').select(['id']).where('users.deletedAt', '<', target.toJSDate()).execute();
   }
 
-  async getList({ withDeleted }: UserListFilter = {}): Promise<UserEntity[]> {
-    return this.userRepository.find({
-      withDeleted,
-      order: {
-        createdAt: 'DESC',
-      },
-      relations: {
-        metadata: true,
-      },
-    });
+  @GenerateSql(
+    { name: 'with deleted', params: [{ withDeleted: true }] },
+    { name: 'without deleted', params: [{ withDeleted: false }] },
+  )
+  getList({ withDeleted }: UserListFilter = {}) {
+    return this.db
+      .selectFrom('users')
+      .select(columns.userAdmin)
+      .select(withMetadata)
+      .$if(!withDeleted, (eb) => eb.where('users.deletedAt', 'is', null))
+      .orderBy('createdAt', 'desc')
+      .execute();
   }
 
-  create(user: Partial<UserEntity>): Promise<UserEntity> {
-    return this.save(user);
+  async create(dto: Insertable<UserTable>) {
+    return this.db
+      .insertInto('users')
+      .values(dto)
+      .returning(columns.userAdmin)
+      .returning(withMetadata)
+      .executeTakeFirstOrThrow();
   }
 
-  // TODO change to (user: Partial<UserEntity>)
-  update(id: string, user: Partial<UserEntity>): Promise<UserEntity> {
-    return this.save({ ...user, id });
+  update(id: string, dto: Updateable<UserTable>) {
+    return this.db
+      .updateTable('users')
+      .set(dto)
+      .where('users.id', '=', asUuid(id))
+      .where('users.deletedAt', 'is', null)
+      .returning(columns.userAdmin)
+      .returning(withMetadata)
+      .executeTakeFirstOrThrow();
+  }
+
+  restore(id: string) {
+    return this.db
+      .updateTable('users')
+      .set({ status: UserStatus.ACTIVE, deletedAt: null })
+      .where('users.id', '=', asUuid(id))
+      .returning(columns.userAdmin)
+      .returning(withMetadata)
+      .executeTakeFirstOrThrow();
   }
 
   async upsertMetadata<T extends keyof UserMetadata>(id: string, { key, value }: { key: T; value: UserMetadata[T] }) {
-    await this.metadataRepository.upsert({ userId: id, key, value }, { conflictPaths: { userId: true, key: true } });
+    await this.db
+      .insertInto('user_metadata')
+      .values({ userId: id, key, value } as Upsert)
+      .onConflict((oc) =>
+        oc.columns(['userId', 'key']).doUpdateSet({
+          key,
+          value,
+        } as Upsert),
+      )
+      .execute();
   }
 
   async deleteMetadata<T extends keyof UserMetadata>(id: string, key: T) {
-    await this.metadataRepository.delete({ userId: id, key });
+    await this.db.deleteFrom('user_metadata').where('userId', '=', id).where('key', '=', key).execute();
   }
 
-  async delete(user: UserEntity, hard?: boolean): Promise<UserEntity> {
-    return hard ? this.userRepository.remove(user) : this.userRepository.softRemove(user);
+  delete(user: { id: string }, hard?: boolean) {
+    return hard
+      ? this.db.deleteFrom('users').where('id', '=', user.id).execute()
+      : this.db.updateTable('users').set({ deletedAt: new Date() }).where('id', '=', user.id).execute();
   }
 
   @GenerateSql()
-  async getUserStats(): Promise<UserStatsQueryResponse[]> {
-    const stats = await this.userRepository
-      .createQueryBuilder('users')
-      .select('users.id', 'userId')
-      .addSelect('users.name', 'userName')
-      .addSelect(`COUNT(assets.id) FILTER (WHERE assets.type = 'IMAGE' AND assets.isVisible)`, 'photos')
-      .addSelect(`COUNT(assets.id) FILTER (WHERE assets.type = 'VIDEO' AND assets.isVisible)`, 'videos')
-      .addSelect('COALESCE(SUM(exif.fileSizeInByte) FILTER (WHERE assets.libraryId IS NULL), 0)', 'usage')
-      .addSelect('users.quotaSizeInBytes', 'quotaSizeInBytes')
-      .leftJoin('users.assets', 'assets')
-      .leftJoin('assets.exifInfo', 'exif')
+  getUserStats() {
+    return this.db
+      .selectFrom('users')
+      .leftJoin('assets', 'assets.ownerId', 'users.id')
+      .leftJoin('exif', 'exif.assetId', 'assets.id')
+      .select(['users.id as userId', 'users.name as userName', 'users.quotaSizeInBytes as quotaSizeInBytes'])
+      .select((eb) => [
+        eb.fn
+          .countAll<number>()
+          .filterWhere((eb) =>
+            eb.and([eb('assets.type', '=', sql.lit(AssetType.IMAGE)), eb('assets.isVisible', '=', sql.lit(true))]),
+          )
+          .as('photos'),
+        eb.fn
+          .countAll<number>()
+          .filterWhere((eb) =>
+            eb.and([eb('assets.type', '=', sql.lit(AssetType.VIDEO)), eb('assets.isVisible', '=', sql.lit(true))]),
+          )
+          .as('videos'),
+        eb.fn
+          .coalesce(eb.fn.sum<number>('exif.fileSizeInByte').filterWhere('assets.libraryId', 'is', null), eb.lit(0))
+          .as('usage'),
+        eb.fn
+          .coalesce(
+            eb.fn
+              .sum<number>('exif.fileSizeInByte')
+              .filterWhere((eb) =>
+                eb.and([eb('assets.libraryId', 'is', null), eb('assets.type', '=', sql.lit(AssetType.IMAGE))]),
+              ),
+            eb.lit(0),
+          )
+          .as('usagePhotos'),
+        eb.fn
+          .coalesce(
+            eb.fn
+              .sum<number>('exif.fileSizeInByte')
+              .filterWhere((eb) =>
+                eb.and([eb('assets.libraryId', 'is', null), eb('assets.type', '=', sql.lit(AssetType.VIDEO))]),
+              ),
+            eb.lit(0),
+          )
+          .as('usageVideos'),
+      ])
+      .where('assets.deletedAt', 'is', null)
       .groupBy('users.id')
-      .orderBy('users.createdAt', 'ASC')
-      .getRawMany();
-
-    for (const stat of stats) {
-      stat.photos = Number(stat.photos);
-      stat.videos = Number(stat.videos);
-      stat.usage = Number(stat.usage);
-      stat.quotaSizeInBytes = stat.quotaSizeInBytes;
-    }
-
-    return stats;
+      .orderBy('users.createdAt', 'asc')
+      .execute();
   }
 
   @GenerateSql({ params: [DummyValue.UUID, DummyValue.NUMBER] })
   async updateUsage(id: string, delta: number): Promise<void> {
-    await this.userRepository.increment({ id }, 'quotaUsageInBytes', delta);
+    await this.db
+      .updateTable('users')
+      .set({ quotaUsageInBytes: sql`"quotaUsageInBytes" + ${delta}`, updatedAt: new Date() })
+      .where('id', '=', asUuid(id))
+      .where('users.deletedAt', 'is', null)
+      .execute();
   }
 
   @GenerateSql({ params: [DummyValue.UUID] })
   async syncUsage(id?: string) {
-    // we can't use parameters with getQuery, hence the template string
-    const subQuery = this.assetRepository
-      .createQueryBuilder('assets')
-      .select('COALESCE(SUM(exif."fileSizeInByte"), 0)')
-      .leftJoin('assets.exifInfo', 'exif')
-      .where('assets.ownerId = users.id')
-      .andWhere(`assets.libraryId IS NULL`)
-      .withDeleted();
-
-    const query = this.userRepository
-      .createQueryBuilder('users')
-      .leftJoin('users.assets', 'assets')
-      .update()
-      .set({ quotaUsageInBytes: () => `(${subQuery.getQuery()})` });
-
-    if (id) {
-      query.where('users.id = :id', { id });
-    }
+    const query = this.db
+      .updateTable('users')
+      .set({
+        quotaUsageInBytes: (eb) =>
+          eb
+            .selectFrom('assets')
+            .leftJoin('exif', 'exif.assetId', 'assets.id')
+            .select((eb) => eb.fn.coalesce(eb.fn.sum<number>('exif.fileSizeInByte'), eb.lit(0)).as('usage'))
+            .where('assets.libraryId', 'is', null)
+            .where('assets.ownerId', '=', eb.ref('users.id')),
+        updatedAt: new Date(),
+      })
+      .where('users.deletedAt', 'is', null)
+      .$if(id != undefined, (eb) => eb.where('users.id', '=', asUuid(id!)));
 
     await query.execute();
-  }
-
-  private async save(user: Partial<UserEntity>) {
-    const { id } = await this.userRepository.save(user);
-    return this.userRepository.findOneOrFail({
-      where: { id },
-      withDeleted: true,
-      relations: {
-        metadata: true,
-      },
-    });
   }
 }

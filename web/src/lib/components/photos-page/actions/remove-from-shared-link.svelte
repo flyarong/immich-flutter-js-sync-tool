@@ -1,22 +1,26 @@
 <script lang="ts">
   import CircleIconButton from '$lib/components/elements/buttons/circle-icon-button.svelte';
-  import { getKey } from '$lib/utils';
+  import { dialogController } from '$lib/components/shared-components/dialog/dialog';
+  import { authManager } from '$lib/managers/auth-manager.svelte';
   import { handleError } from '$lib/utils/handle-error';
   import { removeSharedLinkAssets, type SharedLinkResponseDto } from '@immich/sdk';
   import { mdiDeleteOutline } from '@mdi/js';
+  import { t } from 'svelte-i18n';
   import { NotificationType, notificationController } from '../../shared-components/notification/notification';
   import { getAssetControlContext } from '../asset-select-control-bar.svelte';
-  import { dialogController } from '$lib/components/shared-components/dialog/dialog';
-  import { t } from 'svelte-i18n';
 
-  export let sharedLink: SharedLinkResponseDto;
+  interface Props {
+    sharedLink: SharedLinkResponseDto;
+  }
+
+  let { sharedLink = $bindable() }: Props = $props();
 
   const { getAssets, clearSelect } = getAssetControlContext();
 
   const handleRemove = async () => {
     const isConfirmed = await dialogController.show({
       title: $t('remove_assets_title'),
-      prompt: $t('remove_assets_shared_link_confirmation', { values: { count: getAssets().size } }),
+      prompt: $t('remove_assets_shared_link_confirmation', { values: { count: getAssets().length } }),
       confirmText: $t('remove'),
     });
 
@@ -30,7 +34,7 @@
         assetIdsDto: {
           assetIds: [...getAssets()].map((asset) => asset.id),
         },
-        key: getKey(),
+        key: authManager.key,
       });
 
       for (const result of results) {
@@ -55,4 +59,4 @@
   };
 </script>
 
-<CircleIconButton title={$t('remove_from_shared_link')} on:click={handleRemove} icon={mdiDeleteOutline} />
+<CircleIconButton title={$t('remove_from_shared_link')} onclick={handleRemove} icon={mdiDeleteOutline} />

@@ -8,12 +8,15 @@
   import { purchaseStore } from '$lib/stores/purchase.store';
   import { t } from 'svelte-i18n';
 
-  export let onActivate: () => void;
+  interface Props {
+    onActivate: () => void;
+    showTitle?: boolean;
+    showMessage?: boolean;
+  }
 
-  export let showTitle = true;
-  export let showMessage = true;
-  let productKey = '';
-  let isLoading = false;
+  let { onActivate, showTitle = true, showMessage = true }: Props = $props();
+  let productKey = $state('');
+  let isLoading = $state(false);
 
   const activate = async () => {
     try {
@@ -50,18 +53,18 @@
         <p>
           {$t('purchase_panel_info_2')}
         </p>
-        <div />
+        <div></div>
       </div>
     {/if}
 
-    <div class="flex gap-6 mt-4 justify-between">
+    <div class="flex flex-col sm:flex-row gap-6 mt-4 justify-between">
       <ServerPurchaseOptionCard />
       <UserPurchaseOptionCard />
     </div>
 
     <div class="mt-6">
       <p class="dark:text-immich-gray">{$t('purchase_input_suggestion')}</p>
-      <form class="mt-2 flex gap-2" on:submit={activate}>
+      <form class="mt-2 flex gap-2" onsubmit={activate}>
         <input
           class="immich-form-input w-full"
           id="purchaseKey"

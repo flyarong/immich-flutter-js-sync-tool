@@ -1,11 +1,12 @@
 <script lang="ts">
+  import { invalidateAll } from '$app/navigation';
   import type { ComboBoxOption } from '$lib/components/shared-components/combobox.svelte';
   import SettingCombobox from '$lib/components/shared-components/settings/setting-combobox.svelte';
   import SettingSwitch from '$lib/components/shared-components/settings/setting-switch.svelte';
   import { defaultLang, fallbackLocale, langs, locales } from '$lib/constants';
+  import { themeManager } from '$lib/managers/theme-manager.svelte';
   import {
     alwaysLoadOriginalFile,
-    colorTheme,
     lang,
     locale,
     loopVideo,
@@ -17,27 +18,8 @@
   import { onMount } from 'svelte';
   import { locale as i18nLocale, t } from 'svelte-i18n';
   import { fade } from 'svelte/transition';
-  import { invalidateAll } from '$app/navigation';
 
-  let time = new Date();
-
-  $: formattedDate = time.toLocaleString(editedLocale, {
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-  });
-  $: timePortion = time.toLocaleString(editedLocale, {
-    hour: '2-digit',
-    minute: '2-digit',
-    second: '2-digit',
-  });
-  $: selectedDate = `${formattedDate} ${timePortion}`;
-  $: editedLocale = findLocale($locale).code;
-  $: selectedOption = {
-    value: findLocale(editedLocale).code || fallbackLocale.code,
-    label: findLocale(editedLocale).name || fallbackLocale.name,
-  };
-  $: closestLanguage = getClosestAvailableLocale([$lang], langCodes);
+  let time = $state(new Date());
 
   onMount(() => {
     const interval = setInterval(() => {
@@ -56,10 +38,6 @@
         label: locale.name,
         value: locale.code,
       }));
-  };
-
-  const handleToggleColorTheme = () => {
-    $colorTheme.system = !$colorTheme.system;
   };
 
   const handleToggleLocaleBrowser = () => {
@@ -89,21 +67,42 @@
       $locale = newLocale;
     }
   };
+  let editedLocale = $derived(findLocale($locale).code);
+  let formattedDate = $derived(
+    time.toLocaleString(editedLocale, {
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+    }),
+  );
+  let timePortion = $derived(
+    time.toLocaleString(editedLocale, {
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+    }),
+  );
+  let selectedDate = $derived(`${formattedDate} ${timePortion}`);
+  let selectedOption = $derived({
+    value: findLocale(editedLocale).code || fallbackLocale.code,
+    label: findLocale(editedLocale).name || fallbackLocale.name,
+  });
+  let closestLanguage = $derived(getClosestAvailableLocale([$lang], langCodes));
 </script>
 
 <section class="my-4">
   <div in:fade={{ duration: 500 }}>
-    <div class="ml-4 mt-4 flex flex-col gap-4">
-      <div class="ml-4">
+    <div class="ms-4 mt-4 flex flex-col gap-4">
+      <div class="ms-4">
         <SettingSwitch
           title={$t('theme_selection')}
           subtitle={$t('theme_selection_description')}
-          bind:checked={$colorTheme.system}
-          onToggle={handleToggleColorTheme}
+          checked={themeManager.theme.system}
+          onToggle={(isChecked) => themeManager.setSystem(isChecked)}
         />
       </div>
 
-      <div class="ml-4">
+      <div class="ms-4">
         <SettingCombobox
           comboboxPlaceholder={$t('language')}
           selectedOption={langOptions.find(({ value }) => value === closestLanguage) || defaultLangOption}
@@ -114,7 +113,7 @@
         />
       </div>
 
-      <div class="ml-4">
+      <div class="ms-4">
         <SettingSwitch
           title={$t('default_locale')}
           subtitle={$t('default_locale_description')}
@@ -125,7 +124,7 @@
         </SettingSwitch>
       </div>
       {#if $locale !== undefined}
-        <div class="ml-4">
+        <div class="ms-4">
           <SettingCombobox
             comboboxPlaceholder={$t('searching_locales')}
             {selectedOption}
@@ -137,7 +136,7 @@
         </div>
       {/if}
 
-      <div class="ml-4">
+      <div class="ms-4">
         <SettingSwitch
           title={$t('display_original_photos')}
           subtitle={$t('display_original_photos_setting_description')}
@@ -145,7 +144,7 @@
           onToggle={() => ($alwaysLoadOriginalFile = !$alwaysLoadOriginalFile)}
         />
       </div>
-      <div class="ml-4">
+      <div class="ms-4">
         <SettingSwitch
           title={$t('video_hover_setting')}
           subtitle={$t('video_hover_setting_description')}
@@ -153,7 +152,7 @@
           onToggle={() => ($playVideoThumbnailOnHover = !$playVideoThumbnailOnHover)}
         />
       </div>
-      <div class="ml-4">
+      <div class="ms-4">
         <SettingSwitch
           title={$t('loop_videos')}
           subtitle={$t('loop_videos_description')}
@@ -162,7 +161,7 @@
         />
       </div>
 
-      <div class="ml-4">
+      <div class="ms-4">
         <SettingSwitch
           title={$t('permanent_deletion_warning')}
           subtitle={$t('permanent_deletion_warning_setting_description')}

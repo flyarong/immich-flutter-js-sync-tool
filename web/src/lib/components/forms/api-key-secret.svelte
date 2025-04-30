@@ -1,12 +1,16 @@
 <script lang="ts">
   import { copyToClipboard } from '$lib/utils';
+  import { Button } from '@immich/ui';
   import { mdiKeyVariant } from '@mdi/js';
-  import Button from '../elements/buttons/button.svelte';
-  import FullScreenModal from '../shared-components/full-screen-modal.svelte';
   import { t } from 'svelte-i18n';
+  import FullScreenModal from '../shared-components/full-screen-modal.svelte';
 
-  export let secret = '';
-  export let onDone: () => void;
+  interface Props {
+    secret?: string;
+    onDone: () => void;
+  }
+
+  let { secret = '', onDone }: Props = $props();
 </script>
 
 <FullScreenModal title={$t('api_key')} icon={mdiKeyVariant} onClose={onDone}>
@@ -18,11 +22,11 @@
 
   <div class="my-4 flex flex-col gap-2">
     <!-- <label class="immich-form-label" for="secret">{ $t("api_key") }</label> -->
-    <textarea class="immich-form-input" id="secret" name="secret" readonly={true} value={secret} />
+    <textarea class="immich-form-input" id="secret" name="secret" readonly={true} value={secret}></textarea>
   </div>
 
-  <svelte:fragment slot="sticky-bottom">
-    <Button on:click={() => copyToClipboard(secret)} fullwidth>{$t('copy_to_clipboard')}</Button>
-    <Button on:click={onDone} fullwidth>{$t('done')}</Button>
-  </svelte:fragment>
+  {#snippet stickyBottom()}
+    <Button shape="round" onclick={() => copyToClipboard(secret)} fullWidth>{$t('copy_to_clipboard')}</Button>
+    <Button shape="round" onclick={onDone} fullWidth>{$t('done')}</Button>
+  {/snippet}
 </FullScreenModal>

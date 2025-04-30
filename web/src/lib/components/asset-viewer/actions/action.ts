@@ -12,9 +12,11 @@ type ActionMap = {
   [AssetAction.ADD]: { asset: AssetResponseDto };
   [AssetAction.ADD_TO_ALBUM]: { asset: AssetResponseDto; album: AlbumResponseDto };
   [AssetAction.UNSTACK]: { assets: AssetResponseDto[] };
+  [AssetAction.KEEP_THIS_DELETE_OTHERS]: { asset: AssetResponseDto };
 };
 
 export type Action = {
   [K in AssetAction]: { type: K } & ActionMap[K];
 }[AssetAction];
 export type OnAction = (action: Action) => void;
+export type PreAction = (action: Action) => void;

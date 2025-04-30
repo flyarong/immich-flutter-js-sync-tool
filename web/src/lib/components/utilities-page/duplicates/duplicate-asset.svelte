@@ -3,17 +3,21 @@
   import { getAssetThumbnailUrl } from '$lib/utils';
   import { getAssetResolution, getFileSize } from '$lib/utils/asset-utils';
   import { getAltText } from '$lib/utils/thumbnail-util';
-  import { getAllAlbums, type AssetResponseDto } from '@immich/sdk';
-  import { mdiHeart, mdiMagnifyPlus, mdiImageMultipleOutline } from '@mdi/js';
+  import { type AssetResponseDto, getAllAlbums } from '@immich/sdk';
+  import { mdiHeart, mdiImageMultipleOutline, mdiMagnifyPlus } from '@mdi/js';
   import { t } from 'svelte-i18n';
 
-  export let asset: AssetResponseDto;
-  export let isSelected: boolean;
-  export let onSelectAsset: (asset: AssetResponseDto) => void;
-  export let onViewAsset: (asset: AssetResponseDto) => void;
+  interface Props {
+    asset: AssetResponseDto;
+    isSelected: boolean;
+    onSelectAsset: (asset: AssetResponseDto) => void;
+    onViewAsset: (asset: AssetResponseDto) => void;
+  }
 
-  $: isFromExternalLibrary = !!asset.libraryId;
-  $: assetData = JSON.stringify(asset, null, 2);
+  let { asset, isSelected, onSelectAsset, onViewAsset }: Props = $props();
+
+  let isFromExternalLibrary = $derived(!!asset.libraryId);
+  let assetData = $derived(JSON.stringify(asset, null, 2));
 </script>
 
 <div
@@ -24,7 +28,7 @@
   <div class="relative w-full">
     <button
       type="button"
-      on:click={() => onSelectAsset(asset)}
+      onclick={() => onSelectAsset(asset)}
       class="block relative w-full"
       aria-pressed={isSelected}
       aria-label={$t('keep')}
@@ -40,14 +44,14 @@
 
       <!-- FAVORITE ICON -->
       {#if asset.isFavorite}
-        <div class="absolute bottom-2 left-2">
+        <div class="absolute bottom-2 start-2">
           <Icon path={mdiHeart} size="24" class="text-white" />
         </div>
       {/if}
 
       <!-- OVERLAY CHIP -->
       <div
-        class="absolute bottom-1 right-3 px-4 py-1 rounded-xl text-xs transition-colors {isSelected
+        class="absolute bottom-1 end-3 px-4 py-1 rounded-xl text-xs transition-colors {isSelected
           ? 'bg-green-400/90'
           : 'bg-red-300/90'}"
       >
@@ -55,7 +59,7 @@
       </div>
 
       <!-- EXTERNAL LIBRARY / STACK COUNT CHIP -->
-      <div class="absolute top-2 right-3">
+      <div class="absolute top-2 end-3">
         {#if isFromExternalLibrary}
           <div class="bg-immich-primary/90 px-2 py-1 rounded-xl text-xs text-white">
             {$t('external')}
@@ -64,7 +68,7 @@
         {#if asset.stack?.assetCount}
           <div class="bg-immich-primary/90 px-2 py-1 my-0.5 rounded-xl text-xs text-white">
             <div class="flex items-center justify-center">
-              <div class="mr-1">{asset.stack.assetCount}</div>
+              <div class="me-1">{asset.stack.assetCount}</div>
               <Icon path={mdiImageMultipleOutline} size="18" />
             </div>
           </div>
@@ -74,8 +78,8 @@
 
     <button
       type="button"
-      on:click={() => onViewAsset(asset)}
-      class="absolute rounded-full top-1 left-1 text-gray-200 p-2 hover:text-white bg-black/35 hover:bg-black/50"
+      onclick={() => onViewAsset(asset)}
+      class="absolute rounded-full top-1 start-1 text-gray-200 p-2 hover:text-white bg-black/35 hover:bg-black/50"
       title={$t('view')}
     >
       <Icon ariaLabel={$t('view')} path={mdiMagnifyPlus} flipped size="18" />

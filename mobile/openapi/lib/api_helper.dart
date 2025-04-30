@@ -82,9 +82,6 @@ String parameterToString(dynamic value) {
   if (value is Colorspace) {
     return ColorspaceTypeTransformer().encode(value).toString();
   }
-  if (value is EntityType) {
-    return EntityTypeTypeTransformer().encode(value).toString();
-  }
   if (value is ImageFormat) {
     return ImageFormatTypeTransformer().encode(value).toString();
   }
@@ -102,6 +99,15 @@ String parameterToString(dynamic value) {
   }
   if (value is MemoryType) {
     return MemoryTypeTypeTransformer().encode(value).toString();
+  }
+  if (value is NotificationLevel) {
+    return NotificationLevelTypeTransformer().encode(value).toString();
+  }
+  if (value is NotificationType) {
+    return NotificationTypeTypeTransformer().encode(value).toString();
+  }
+  if (value is OAuthTokenEndpointAuthMethod) {
+    return OAuthTokenEndpointAuthMethodTypeTransformer().encode(value).toString();
   }
   if (value is PartnerDirection) {
     return PartnerDirectionTypeTransformer().encode(value).toString();
@@ -129,6 +135,12 @@ String parameterToString(dynamic value) {
   }
   if (value is SourceType) {
     return SourceTypeTypeTransformer().encode(value).toString();
+  }
+  if (value is SyncEntityType) {
+    return SyncEntityTypeTypeTransformer().encode(value).toString();
+  }
+  if (value is SyncRequestType) {
+    return SyncRequestTypeTypeTransformer().encode(value).toString();
   }
   if (value is TimeBucketSize) {
     return TimeBucketSizeTypeTransformer().encode(value).toString();

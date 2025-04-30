@@ -33,7 +33,7 @@ class SharedLinkItem extends ConsumerWidget {
     if (sharedLink.expiresAt != null) {
       if (isExpired()) {
         return Text(
-          "shared_link_expired",
+          "expired",
           style: TextStyle(color: Colors.red[300]),
         ).tr();
       }
@@ -94,7 +94,7 @@ class SharedLinkItem extends ConsumerWidget {
       Clipboard.setData(
         ClipboardData(text: "${serverUrl}share/${sharedLink.key}"),
       ).then((_) {
-        ScaffoldMessenger.of(context).showSnackBar(
+        context.scaffoldMessenger.showSnackBar(
           SnackBar(
             content: Text(
               "shared_link_clipboard_copied_massage",
@@ -114,7 +114,7 @@ class SharedLinkItem extends ConsumerWidget {
         builder: (BuildContext context) {
           return ConfirmDialog(
             title: "delete_shared_link_dialog_title",
-            content: "delete_shared_link_dialog_content",
+            content: "confirm_delete_shared_link",
             onOk: () => ref
                 .read(sharedLinksStateProvider.notifier)
                 .deleteLink(sharedLink.id),
@@ -178,10 +178,8 @@ class SharedLinkItem extends ConsumerWidget {
     Widget buildBottomInfo() {
       return Row(
         children: [
-          if (sharedLink.allowUpload)
-            buildInfoChip("shared_link_info_chip_upload".tr()),
-          if (sharedLink.allowDownload)
-            buildInfoChip("shared_link_info_chip_download".tr()),
+          if (sharedLink.allowUpload) buildInfoChip("upload".tr()),
+          if (sharedLink.allowDownload) buildInfoChip("download".tr()),
           if (sharedLink.showMetadata)
             buildInfoChip("shared_link_info_chip_metadata".tr()),
         ],
@@ -240,7 +238,7 @@ class SharedLinkItem extends ConsumerWidget {
             child: Tooltip(
               verticalOffset: 0,
               decoration: BoxDecoration(
-                color: colorScheme.primary.withOpacity(0.9),
+                color: colorScheme.primary.withValues(alpha: 0.9),
                 borderRadius: BorderRadius.circular(10),
               ),
               textStyle: TextStyle(
@@ -268,7 +266,7 @@ class SharedLinkItem extends ConsumerWidget {
                 child: Tooltip(
                   verticalOffset: 0,
                   decoration: BoxDecoration(
-                    color: colorScheme.primary.withOpacity(0.9),
+                    color: colorScheme.primary.withValues(alpha: 0.9),
                     borderRadius: BorderRadius.circular(10),
                   ),
                   textStyle: TextStyle(

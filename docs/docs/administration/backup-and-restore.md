@@ -5,6 +5,10 @@ import TabItem from '@theme/TabItem';
 
 A [3-2-1 backup strategy](https://www.backblaze.com/blog/the-3-2-1-backup-strategy/) is recommended to protect your data. You should keep copies of your uploaded photos/videos as well as the Immich database for a comprehensive backup solution. This page provides an overview on how to backup the database and the location of user-uploaded pictures and videos. A template bash script that can be run as a cron job is provided [here](/docs/guides/template-backup-script.md)
 
+:::danger
+The instructions on this page show you how to prepare your Immich instance to be backed up, and which files to take a backup of. You still need to take care of using an actual backup tool to make a backup yourself.
+:::
+
 ## Database
 
 :::caution
@@ -15,11 +19,37 @@ Immich saves [file paths in the database](https://github.com/immich-app/immich/d
 Refer to the official [postgres documentation](https://www.postgresql.org/docs/current/backup.html) for details about backing up and restoring a postgres database.
 :::
 
-The recommended way to backup and restore the Immich database is to use the `pg_dumpall` command. When restoring, you need to delete the `DB_DATA_LOCATION` folder (if it exists) to reset the database.
-
 :::caution
 It is not recommended to directly backup the `DB_DATA_LOCATION` folder. Doing so while the database is running can lead to a corrupted backup that cannot be restored.
 :::
+
+### Automatic Database Dumps
+
+:::warning
+The automatic database dumps can be used to restore the database in the event of damage to the Postgres database files.
+There is no monitoring for these dumps and you will not be notified if they are unsuccessful.
+:::
+
+:::caution
+The database dumps do **NOT** contain any pictures or videos, only metadata. They are only usable with a copy of the other files in `UPLOAD_LOCATION` as outlined below.
+:::
+
+For disaster-recovery purposes, Immich will automatically create database dumps. The dumps are stored in `UPLOAD_LOCATION/backups`.
+Please be sure to make your own, independent backup of the database together with the asset folders as noted below.
+You can adjust the schedule and amount of kept database dumps in the [admin settings](http://my.immich.app/admin/system-settings?isOpen=backup).
+By default, Immich will keep the last 14 database dumps and create a new dump every day at 2:00 AM.
+
+#### Trigger Dump
+
+You are able to trigger a database dump in the [admin job status page](http://my.immich.app/admin/jobs-status).
+Visit the page, open the "Create job" modal from the top right, select "Create Database Dump" and click "Confirm".
+A job will run and trigger a dump, you can verify this worked correctly by checking the logs or the `backups/` folder.
+This dumps will count towards the last `X` dumps that will be kept based on your settings.
+
+#### Restoring
+
+We hope to make restoring simpler in future versions, for now you can find the database dumps in the `UPLOAD_LOCATION/backups` folder on your host.
+Then please follow the steps in the following section for restoring the database.
 
 ### Manual Backup and Restore
 
@@ -39,9 +69,9 @@ docker compose create           # Create Docker containers for Immich apps witho
 docker start immich_postgres    # Start Postgres server
 sleep 10                        # Wait for Postgres server to start up
 # Check the database user if you deviated from the default
-gunzip < "/path/to/backup/dump.sql.gz" \
+gunzip --stdout "/path/to/backup/dump.sql.gz" \
 | sed "s/SELECT pg_catalog.set_config('search_path', '', false);/SELECT pg_catalog.set_config('search_path', 'public, pg_catalog', true);/g" \
-| docker exec -i immich_postgres psql --username=postgres  # Restore Backup
+| docker exec -i immich_postgres psql --dbname=postgres --username=<DB_USERNAME>  # Restore Backup
 docker compose up -d            # Start remainder of Immich apps
 ```
 
@@ -49,81 +79,43 @@ docker compose up -d            # Start remainder of Immich apps
   <TabItem value="Windows system (PowerShell)" label="Windows system (PowerShell)">
 
 ```powershell title='Backup'
-docker exec -t immich_postgres pg_dumpall --clean --if-exists --username=postgres | Set-Content -Encoding utf8 "C:\path\to\backup\dump.sql"
+[System.IO.File]::WriteAllLines("C:\absolute\path\to\backup\dump.sql", (docker exec -t immich_postgres pg_dumpall --clean --if-exists --username=postgres))
 ```
 
 ```powershell title='Restore'
 docker compose down -v  # CAUTION! Deletes all Immich data to start from scratch
 ## Uncomment the next line and replace DB_DATA_LOCATION with your Postgres path to permanently reset the Postgres database
 # Remove-Item -Recurse -Force DB_DATA_LOCATION # CAUTION! Deletes all Immich data to start from scratch
-docker compose pull             # Update to latest version of Immich (if desired)
-docker compose create           # Create Docker containers for Immich apps without running them
-docker start immich_postgres    # Start Postgres server
-sleep 10                        # Wait for Postgres server to start up
-# Check the database user if you deviated from the default
-gc "C:\path\to\backup\dump.sql" | docker exec -i immich_postgres psql --username=postgres  # Restore Backup
-docker compose up -d            # Start remainder of Immich apps
+## You should mount the backup (as a volume, example: `- 'C:\path\to\backup\dump.sql:/dump.sql'`) into the immich_postgres container using the docker-compose.yml
+docker compose pull                               # Update to latest version of Immich (if desired)
+docker compose create                             # Create Docker containers for Immich apps without running them
+docker start immich_postgres                      # Start Postgres server
+sleep 10                                          # Wait for Postgres server to start up
+docker exec -it immich_postgres bash              # Enter the Docker shell and run the following command
+# Check the database user if you deviated from the default. If your backup ends in `.gz`, replace `cat` with `gunzip --stdout`
+cat "/dump.sql" | sed "s/SELECT pg_catalog.set_config('search_path', '', false);/SELECT pg_catalog.set_config('search_path', 'public, pg_catalog', true);/g" | psql --dbname=postgres --username=<DB_USERNAME>
+exit                                              # Exit the Docker shell
+docker compose up -d                              # Start remainder of Immich apps
 ```
 
 </TabItem>
 </Tabs>
 
-Note that for the database restore to proceed properly, it requires a completely fresh install (i.e. the Immich server has never run since creating the Docker containers). If the Immich app has run, Postgres conflicts may be encountered upon database restoration (relation already exists, violated foreign key constraints, multiple primary keys, etc.).
+Note that for the database restore to proceed properly, it requires a completely fresh install (i.e. the Immich server has never run since creating the Docker containers). If the Immich app has run, Postgres conflicts may be encountered upon database restoration (relation already exists, violated foreign key constraints, multiple primary keys, etc.), in which case you need to delete the `DB_DATA_LOCATION` folder to reset the database.
 
 :::tip
-Some deployment methods make it difficult to start the database without also starting the server or microservices. In these cases, you may set the environmental variable `DB_SKIP_MIGRATIONS=true` before starting the services. This will prevent the server from running migrations that interfere with the restore process. Note that both the server and microservices must have this variable set to prevent the migrations from running. Be sure to remove this variable and restart the services after the database is restored.
-:::
-
-### Automatic Database Backups
-
-The database dumps can also be automated (using [this image](https://github.com/prodrigestivill/docker-postgres-backup-local)) by editing the docker compose file to match the following:
-
-```yaml
-services:
-  ...
-  backup:
-    container_name: immich_db_dumper
-    image: prodrigestivill/postgres-backup-local:14
-    restart: always
-    env_file:
-      - .env
-    environment:
-      POSTGRES_HOST: database
-      POSTGRES_CLUSTER: 'TRUE'
-      POSTGRES_USER: ${DB_USERNAME}
-      POSTGRES_PASSWORD: ${DB_PASSWORD}
-      POSTGRES_DB: ${DB_DATABASE_NAME}
-      SCHEDULE: "@daily"
-      POSTGRES_EXTRA_OPTS: '--clean --if-exists'
-      BACKUP_DIR: /db_dumps
-    volumes:
-      - ./db_dumps:/db_dumps
-    depends_on:
-      - database
-```
-
-Then you can restore with the same command but pointed at the latest dump.
-
-```bash title='Automated Restore'
-# Be sure to check the username if you changed it from default
-gunzip < db_dumps/last/immich-latest.sql.gz \
-| sed "s/SELECT pg_catalog.set_config('search_path', '', false);/SELECT pg_catalog.set_config('search_path', 'public, pg_catalog', true);/g" \
-| docker exec -i immich_postgres psql --username=postgres
-```
-
-:::note
-If you see the error `ERROR:  type "earth" does not exist`, or you have problems with Reverse Geocoding after a restore, add the following `sed` fragment to your restore command.
-
-Example: `gunzip < "/path/to/backup/dump.sql.gz" | sed "s/SELECT pg_catalog.set_config('search_path', '', false);/SELECT pg_catalog.set_config('search_path', 'public, pg_catalog', true);/g" | docker exec -i immich_postgres psql --username=postgres`
+Some deployment methods make it difficult to start the database without also starting the server. In these cases, you may set the environment variable `DB_SKIP_MIGRATIONS=true` before starting the services. This will prevent the server from running migrations that interfere with the restore process. Be sure to remove this variable and restart the services after the database is restored.
 :::
 
 ## Filesystem
 
-Immich stores two types of content in the filesystem: (1) original, unmodified assets (photos and videos), and (2) generated content. Only the original content needs to be backed-up, which is stored in the following folders:
+Immich stores two types of content in the filesystem: (a) original, unmodified assets (photos and videos), and (b) generated content. We recommend backing up the entire contents of `UPLOAD_LOCATION`, but only the original content is critical, which is stored in the following folders:
 
 1. `UPLOAD_LOCATION/library`
 2. `UPLOAD_LOCATION/upload`
 3. `UPLOAD_LOCATION/profile`
+
+If you choose to back up only those folders, you will need to rerun the transcoding and thumbnail generation jobs for all assets after you restore from a backup.
 
 :::caution
 If you moved some of these folders onto a different storage device, such as `profile/`, make sure to adjust the backup path to match your setup
@@ -200,7 +192,7 @@ When you turn off the storage template engine, it will leave the assets in `UPLO
   - Stored in `UPLOAD_LOCATION/profile/<userID>`.
 - **Thumbs Images:**
   - Preview images (blurred, small, large) for each asset and thumbnails for recognized faces.
-  - Stored in `UPLOCAD_LOCATION/thumbs/<userID>`.
+  - Stored in `UPLOAD_LOCATION/thumbs/<userID>`.
 - **Encoded Assets:**
   - Videos that have been re-encoded from the original for wider compatibility. The original is not removed.
   - Stored in `UPLOAD_LOCATION/encoded-video/<userID>`.

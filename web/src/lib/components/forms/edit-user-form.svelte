@@ -1,32 +1,43 @@
 <script lang="ts">
+  import { dialogController } from '$lib/components/shared-components/dialog/dialog';
   import FullScreenModal from '$lib/components/shared-components/full-screen-modal.svelte';
   import { AppRoute } from '$lib/constants';
-  import { serverInfo } from '$lib/stores/server-info.store';
+  import { userInteraction } from '$lib/stores/user.svelte';
+  import { ByteUnit, convertFromBytes, convertToBytes } from '$lib/utils/byte-units';
   import { handleError } from '$lib/utils/handle-error';
   import { updateUserAdmin, type UserAdminResponseDto } from '@immich/sdk';
+  import { Button } from '@immich/ui';
   import { mdiAccountEditOutline } from '@mdi/js';
-  import Button from '../elements/buttons/button.svelte';
-  import { dialogController } from '$lib/components/shared-components/dialog/dialog';
   import { t } from 'svelte-i18n';
-  import { ByteUnit, convertFromBytes, convertToBytes } from '$lib/utils/byte-units';
 
-  export let user: UserAdminResponseDto;
-  export let canResetPassword = true;
-  export let newPassword: string;
-  export let onClose: () => void;
-  export let onResetPasswordSuccess: () => void;
-  export let onEditSuccess: () => void;
+  interface Props {
+    user: UserAdminResponseDto;
+    canResetPassword?: boolean;
+    newPassword: string;
+    onClose: () => void;
+    onResetPasswordSuccess: () => void;
+    onEditSuccess: () => void;
+  }
 
-  let error: string;
-  let success: string;
-  let quotaSize = user.quotaSizeInBytes ? convertFromBytes(user.quotaSizeInBytes, ByteUnit.GiB) : null;
+  let {
+    user,
+    canResetPassword = true,
+    newPassword = $bindable(),
+    onClose,
+    onResetPasswordSuccess,
+    onEditSuccess,
+  }: Props = $props();
+
+  let quotaSize = $state(user.quotaSizeInBytes === null ? null : convertFromBytes(user.quotaSizeInBytes, ByteUnit.GiB));
 
   const previousQutoa = user.quotaSizeInBytes;
 
-  $: quotaSizeWarning =
+  let quotaSizeWarning = $derived(
     previousQutoa !== convertToBytes(Number(quotaSize), ByteUnit.GiB) &&
-    !!quotaSize &&
-    convertToBytes(Number(quotaSize), ByteUnit.GiB) > $serverInfo.diskSizeRaw;
+      !!quotaSize &&
+      userInteraction.serverInfo &&
+      convertToBytes(Number(quotaSize), ByteUnit.GiB) > userInteraction.serverInfo.diskSizeRaw,
+  );
 
   const editUser = async () => {
     try {
@@ -37,7 +48,7 @@
           email,
           name,
           storageLabel: storageLabel || '',
-          quotaSizeInBytes: quotaSize ? convertToBytes(Number(quotaSize), ByteUnit.GiB) : null,
+          quotaSizeInBytes: quotaSize === null ? null : convertToBytes(Number(quotaSize), ByteUnit.GiB),
         },
       });
 
@@ -89,10 +100,15 @@
 
     return generatedPassword;
   }
+
+  const onSubmit = async (event: Event) => {
+    event.preventDefault();
+    await editUser();
+  };
 </script>
 
 <FullScreenModal title={$t('edit_user')} icon={mdiAccountEditOutline} {onClose}>
-  <form on:submit|preventDefault={editUser} autocomplete="off" id="edit-user-form">
+  <form onsubmit={onSubmit} autocomplete="off" id="edit-user-form">
     <div class="my-4 flex flex-col gap-2">
       <label class="immich-form-label" for="email">{$t('email')}</label>
       <input class="immich-form-input" id="email" name="email" type="email" bind:value={user.email} />
@@ -110,8 +126,15 @@
           <p class="text-red-400 text-sm">{$t('errors.quota_higher_than_disk_size')}</p>
         {/if}</label
       >
-      <input class="immich-form-input" id="quotaSize" name="quotaSize" type="number" min="0" bind:value={quotaSize} />
-      <p>{$t('admin.note_unlimited_quota')}</p>
+      <input
+        class="immich-form-input"
+        id="quotaSize"
+        name="quotaSize"
+        placeholder={$t('unlimited')}
+        type="number"
+        min="0"
+        bind:value={quotaSize}
+      />
     </div>
 
     <div class="my-4 flex flex-col gap-2">
@@ -131,19 +154,14 @@
         </a>
       </p>
     </div>
-
-    {#if error}
-      <p class="ml-4 text-sm text-red-400">{error}</p>
-    {/if}
-
-    {#if success}
-      <p class="ml-4 text-sm text-immich-primary">{success}</p>
-    {/if}
   </form>
-  <svelte:fragment slot="sticky-bottom">
+
+  {#snippet stickyBottom()}
     {#if canResetPassword}
-      <Button color="light-red" fullwidth on:click={resetPassword}>{$t('reset_password')}</Button>
+      <Button shape="round" color="warning" variant="filled" fullWidth onclick={resetPassword}
+        >{$t('reset_password')}</Button
+      >
     {/if}
-    <Button type="submit" fullwidth form="edit-user-form">{$t('confirm')}</Button>
-  </svelte:fragment>
+    <Button type="submit" shape="round" fullWidth form="edit-user-form">{$t('confirm')}</Button>
+  {/snippet}
 </FullScreenModal>
